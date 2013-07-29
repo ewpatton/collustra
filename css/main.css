@@ -23,12 +23,19 @@ html, body { height: 100%; }
     margin-left: 0.7em;
     margin-right: 0.7em;
     text-decoration: none;
-    color: #00F
+    color: #00F;
 }
 
 #endpoints a.disabled {
     color: #666;
     cursor: default;
+}
+
+#endpoints.hasItems a {
+    margin-left: 0.7em;
+    margin-right: 0.7em;
+    text-decoration: none;
+    color: #00F;
 }
 
 .ui-layout-toggler { background-color: #888; }
