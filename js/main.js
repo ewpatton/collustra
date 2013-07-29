@@ -60,43 +60,90 @@ var layoutResize = function(name, pane, state, option, layout) {
   
 };
 
+function updateEndpoint(uri) {
+  var dialog = $("#endpoint-dialog");
+  var newUri = dialog.find("[name='endpoint-url']").val();
+  var newLabel = dialog.find("[name='endpoint-label']").val();
+  var newComment = dialog.find("[name='endpoint-comment']").val();
+  if ( newUri == "" || newLabel == "" ) return false;
+  var opt = $("#endpoints [value='"+uri+"']");
+  if ( opt.length == 0 ) {
+    opt = $("<option>");
+    opt.appendTo("#endpoints select");
+    if ( !$("#endpoints").hasClass("hasItems") ) {
+      $("#endpoints").addClass("hasItems");
+    }
+  }
+  opt.val(newUri);
+  opt.text(newLabel);
+  opt.attr("comment", newComment);
+  return true;
+}
+
+function removeEndoint(uri) {
+  $("#endpoints [value='"+uri+"']").remove();
+  if ( $("#endpoints select").children().length == 0 ) {
+    var opt = $("<option>");
+    opt.text("No Endpoint");
+    opt.appendTo("#endpoints select");
+  }
+}
+
 function showDialogForEndpoint(uri) {
-  $("#endpoint-dialog").dialog({modal:true,draggable:false,resizable:false,
-                                title:"SPARQL Endpoint Options"})
+  var dialog = $("#endpoint-dialog");
+  dialog.dialog({modal:true,draggable:false,resizable:false,
+                 width:600,title:"SPARQL Endpoint Options",
+                 buttons:
+                 [
+                   {text:"Cancel", click: function() {
+                     $(this).dialog("close");
+                   }},
+                   {text:"Save", click: function() {
+                     if ( updateEndpoint(uri) ) {
+                       $("#endpoints option.default").remove();
+                       $(this).dialog("close");
+                     }
+                   }}
+                 ]})
     .dialog("open");
+  dialog.find("[name='endpoint-url']").val(uri);
+  dialog.find("[name='endpoint-label']").val($("#endpoints [value='"+uri+"']").text());
+  dialog.find("[name='endpoint-comment']").val($("#endpoints [value='"+uri+"']").attr("comment"));
 }
 
 function loadSparqlDescription(uri) {
   var deferred = $.Deferred();
-  store.load("remove", uri, function(success, numTriples) {
+  store.load("remote", uri, function(success, numTriples) {
     if(success) {
       deferred.resolveWith(window, [uri, store]);
-      var arr = store.match(null, store.rdf.createNamedNode(SD.endpoint),
-                            store.rdf.createNamedNode(uri)).toArray();
-      var subj = uri;
-      if(arr.length > 0) {
-        subj = arr[0].object.value;
-      }
-      var node = store.rdf.createNamedNode(subj);
-      arr = store.match(node, store.rdf.createNamedNode(RDFS.label)).toArray();
-      var label = "";
-      if(arr.length > 0) {
-        label = arr[0].object.value;
-      }
-      var comment = "";
-      arr = store.match(node, store.rdf.createNamedNode(RDFS.comment)).toArray();
-      if(arr.length > 0) {
-        comment = arr[0].object.value;
-      }
-      if(label == "") {
-        showDialogForEndpoint(uri);
-      } else {
-        $("#endpoints").find("option.default").remove();
-        var opt = $("<option>");
-        opt.val(uri).text(label);
-        opt.attr("tooltip",comment);
-        opt.appendTo("#endpoints select");
-      }
+      store.graph(function(success, graph) {
+        var arr = graph.match(null, store.rdf.createNamedNode(SD.endpoint),
+                              store.rdf.createNamedNode(uri)).toArray();
+        var subj = uri;
+        if(arr.length > 0) {
+          subj = arr[0].subject.value || arr[0].subject.nominalValue;
+        }
+        var node = store.rdf.createNamedNode(subj);
+        arr = graph.match(node, store.rdf.createNamedNode(RDFS.label)).toArray();
+        var label = "";
+        if(arr.length > 0) {
+          label = arr[0].object.value || arr[0].object.nominalValue;
+        }
+        var comment = "";
+        arr = graph.match(node, store.rdf.createNamedNode(RDFS.comment)).toArray();
+        if(arr.length > 0) {
+          comment = arr[0].object.value || arr[0].object.nominalValue;
+        }
+        if(label == "") {
+          showDialogForEndpoint(uri);
+        } else {
+          $("#endpoints").find("option.default").remove();
+          var opt = $("<option>");
+          opt.val(uri).text(label);
+          opt.attr("tooltip",comment);
+          opt.appendTo("#endpoints select");
+        }
+      });
     } else {
       deferred.rejectWith(window, [uri]);
       showDialogForEndpoint(uri);
@@ -109,12 +156,7 @@ function dropUrl(event) {
   var items = event.dataTransfer.items;
   for(var i=0;i<items.length;i++) {
     if(items[i].type == "text/uri-list") {
-      items[i].getAsString(function(str) {
-        $("#endpoints").find("option.default").remove();
-        var opt = $("<option>");
-        opt.val(str).text(str);
-        opt.appendTo("#endpoints select");
-      });
+      items[i].getAsString(loadSparqlDescription);
     }
   }
   if (event.preventDefault) { event.preventDefault(); }
