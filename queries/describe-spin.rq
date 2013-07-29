@@ -5,11 +5,14 @@ PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
 DESCRIBE ?query ?projection ?triple ?order
 WHERE {
   ?query a sp:Query ;
-    sp:where [ rdf:rest*/rdf:first ?triple ] .
+    sp:where ?whereClause .
+  ?whereClause rdf:rest*/rdf:first? ?triple .
   OPTIONAL {
-    ?query sp:resultVariables [ rdf:rest*/rdf:first ?projection ] .
+    ?query sp:resultVariables ?vars .
+    ?vars rdf:rest*/rdf:first? ?projection .
   }
   OPTIONAL {
-    ?query sp:orderBy [ rdf:rest*/rdf:first ?order ] .
+    ?query sp:orderBy ?orderList .
+    ?orderList rdf:rest*/rdf:first? ?order .
   }
 }
