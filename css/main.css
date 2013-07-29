@@ -1,0 +1,89 @@
+html, body { height: 100%; }
+
+#left-pane { position:absolute; top:0; left: 0; width: 75%; height: 100%;}
+#right-pane { position:absolute; top:0; left: 75%; width: 25%; height: 100%; }
+
+#query-list .ui-selecting { background: #FECA40; }
+#query-list .ui-selected { background: #F39814; color: white; }
+#query-list ul { list-style-type: none; margin: 0; padding: 0; }
+#query-list li {
+    margin: 3px; padding: 0.2em; font-size: 1em; height: 14px;
+}
+
+.ui-layout-center { background: #FFE; display: block; width: 100px; height: 100px;}
+.ui-layout-east { background-color: #FEF; }
+.ui-layout-south { background-color: #EFF; }
+.ui-layout-north { background-color: #FEE; }
+
+#endpoints {
+    padding: 0.5em;
+}
+
+#endpoints a {
+    margin-left: 0.7em;
+    margin-right: 0.7em;
+    text-decoration: none;
+    color: #00F
+}
+
+#endpoints a.disabled {
+    color: #666;
+    cursor: default;
+}
+
+.ui-layout-toggler { background-color: #888; }
+.ui-layout-resizer { background-color: #DDD; }
+
+div.ui-draggable-dragging {
+    background-color: #fff;
+    border: 1px solid black;
+    list-style-type: none;
+    list-style-image: none;
+}
+
+.ui-draggable-dragging { z-index: 1000000; }
+
+.drop-here {
+    box-sizing: border-box;
+    background-color: #CFF;
+    border: 3px dashed #6CF;
+    -webkit-border-radius: 8px;
+    -moz-border-radius: 8px;
+    border-radius: 8px;
+}
+
+.drop-now {
+    border-color: #363;
+    background-color: #CFC;
+}
+
+div.drag-query {
+    background-color: #efe;
+    font-size: 1.4em;
+    padding: 3pt;
+    height: 20px;
+    margin: 0;
+}
+
+div.query {
+    border: 1px solid black;
+    background-color: #efe;
+    font-size: 1.4em;
+    padding: 0;
+    height: auto;
+    padding-top: 3pt;
+}
+
+div.query span {
+    margin: 3pt;
+}
+
+div.vars > div {
+    border-left: 3px solid blue;
+    margin: 4px 0px;
+    padding: 4pt;
+}
+
+#endpoint-dialog {
+    display: none;
+}

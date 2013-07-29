@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta http-equiv="Content-Type" content="text/html;charset=UTF-8" />
+    <title>SPARQLr</title>
+    <link href="css/reset.css" type="text/css" rel="stylesheet" />
+    <link href="css/jquery-ui-1.10.3/themes/base/jquery-ui.css" type="text/css"
+          rel="stylesheet" />
+    <link href="css/jquery.contextMenu.css" type="text/css" rel="stylesheet" />
+    <link href="css/main.css" type="text/css" rel="stylesheet" />
+<!--    <script src="jquery-1.10.2.js"></script>-->
+    <script src="js/jquery-1.8.2.min.js"></script>
+    <script src="js/jquery-migrate-1.2.1.js"></script>
+    <script src="css/jquery-ui-1.10.3/ui/jquery-ui.js"></script>
+    <script src="js/jquery.layout-1.2.0.js"></script>
+    <script src="js/jquery.contextMenu.js"></script>
+    <script src="js/rdf_store_min.js"></script>
+    <script src="js/ns.js"></script>
+    <script src="js/main.js"></script>
+  </head>
+  <body ondragover="event.dataTransfer.effectAllowed='none'; event.dataTransfer.dropEffect='none'; return false;">
+    <div class="ui-layout-center" id="left-pane" ondragover="event.dataTransfer.effectAllowed='none'; event.dataTransfer.dropEffect='none'; return false;">
+      <div id="canvas" class="ui-layout-center">
+      </div>
+      <div class="ui-layout-south">
+      </div>
+    </div>
+    <div id="query-list" class="ui-layout-east">
+      <div id="endpoints" class="ui-layout-north">
+        <p>Endpoint: <select><option class="default">No Endpoint</option></select></p>
+        <p><a href="#">Add</a><a href="#" class="disabled">Edit</a><a href="#" class="disabled">Remove</a>
+      </div>
+      <div class="ui-layout-center" ondragover="event.stopPropagation(); return false">
+        <ul>
+          <li id="list-people" class="query-item" comment="Lists all of the instances of foaf:Person along with their given and family names and any online accounts they hold.">List Person</li>
+          <li class="query-item" comment="Lists all of the donations in the triple store, along with the type, text, location, and contributor.">List Donations</li>
+        </ul>
+      </div>
+      <div class="ui-layout-south" ondragover="event.dataTransfer.effectAllowed='none'; event.dataTransfer.dropEffect='none'; return false;">
+      </div>
+    </div>
+    <div id="endpoint-dialog">
+      <form>
+        <p>
+          <label for="endpoint-url">Endpoint URL:</label><input name="endpoint-url" type="text" />
+        </p>
+        <p>
+          <label for="endpoint-label">Label:</label><input name="endpoint-label" type="text" />
+        </p>
+        <p>
+          <label for="endpoint-comment">Comment:</label>
+        </p>
+        <textarea name="endpoint-comment" rows="4" cols="80"></textarea>
+      </form>
+    </div>
+  </body>
+</html>
