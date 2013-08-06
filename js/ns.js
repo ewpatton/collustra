@@ -2,7 +2,10 @@
   var ns = "http://www.w3.org/1999/02/22-rdf-syntax-ns#";
   window.RDF = {
     NS: ns,
-    type: ns+"type"
+    type: ns+"type",
+    first: ns+"first",
+    rest: ns+"rest",
+    nil: ns+"nil"
   };
 })();
 
@@ -24,11 +27,33 @@
 })();
 
 (function() {
-  var ns = "http://www.w3.org/ns/sparql-service-description#";
+  var ns = "http://spinrdf.org/sp#";
   window.SP = {
     NS: ns,
+    Asc: ns+"Asc",
+    Desc: ns+"Desc",
     Query: ns+"Query",
     Select: ns+"Select",
-    resultVariables: ns+"resultVariables"
+    expression: ns+"expression",
+    object: ns+"object",
+    orderBy: ns+"orderBy",
+    predicate: ns+"predicate",
+    resultVariables: ns+"resultVariables",
+    subject: ns+"subject",
+    varName: ns+"varName",
+    where: ns+"where"
+  };
+})();
+
+(function() {
+  var ns = "http://www.w3.org/2001/XMLSchema#";
+  window.XSD = {
+    NS: ns,
+    Decimal: ns+"decimal",
+    Integer: ns+"integer",
+    Int: ns+"int",
+    Float: ns+"float",
+    Double: ns+"double",
+    Short: ns+"short"
   };
 })();

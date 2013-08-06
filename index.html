@@ -8,7 +8,7 @@
           rel="stylesheet" />
     <link href="css/jquery.contextMenu.css" type="text/css" rel="stylesheet" />
     <link href="css/main.css" type="text/css" rel="stylesheet" />
-<!--    <script src="jquery-1.10.2.js"></script>-->
+    <script src="js/md5.js"></script>
     <script src="js/jquery-1.8.2.min.js"></script>
     <script src="js/jquery-migrate-1.2.1.js"></script>
     <script src="css/jquery-ui-1.10.3/ui/jquery-ui.js"></script>
@@ -16,13 +16,54 @@
     <script src="js/jquery.contextMenu.js"></script>
     <script src="js/rdf_store_min.js"></script>
     <script src="js/ns.js"></script>
+    <script src="js/prefix.js"></script>
+    <script src="js/spin.js"></script>
+    <script src="js/model.js"></script>
+    <script src="js/view.js"></script>
     <script src="js/main.js"></script>
   </head>
   <body ondragover="event.dataTransfer.effectAllowed='none'; event.dataTransfer.dropEffect='none'; return false;">
     <div class="ui-layout-center" id="left-pane" ondragover="event.dataTransfer.effectAllowed='none'; event.dataTransfer.dropEffect='none'; return false;">
       <div id="canvas" class="ui-layout-center">
       </div>
-      <div class="ui-layout-south">
+      <div id="query-results" class="ui-layout-south">
+        <div class="tabs-left">
+          <ul>
+            <li><a href="#results-raw-sparql" title="View raw SPARQL"></a></li>
+            <li><a href="#results-tabular" title="View as tables"></a></li>
+            <li><a href="#results-map" title="View on map"></a></li>
+            <li><a href="#results-timeline" title="View on timeline"></a></li>
+          </ul>
+          <div id="results-raw-sparql"></div>
+          <div id="results-tabular"><div class="tables"></div></div>
+          <div id="results-map"></div>
+          <div id="results-timeline"></div>
+        </div>
+        <div class="spinner">
+          <div class="background"></div>
+          <div id="circularG">
+            <div id="circularG_1" class="circularG">
+            </div>
+            <div id="circularG_2" class="circularG">
+            </div>
+            <div id="circularG_3" class="circularG">
+            </div>
+            <div id="circularG_4" class="circularG">
+            </div>
+            <div id="circularG_5" class="circularG">
+            </div>
+            <div id="circularG_6" class="circularG">
+            </div>
+            <div id="circularG_7" class="circularG">
+            </div>
+            <div id="circularG_8" class="circularG">
+            </div>
+          </div>
+        </div>
+        <div class="container">
+          <div class="tables">
+          </div>
+        </div>
       </div>
     </div>
     <div id="query-list" class="ui-layout-east">
@@ -30,11 +71,20 @@
         <p>Endpoint: <select><option class="default">No Endpoint</option></select></p>
         <p><a href="#">Add</a><a href="#" class="disabled">Edit</a><a href="#" class="disabled">Remove</a>
       </div>
-      <div class="ui-layout-center" ondragover="event.stopPropagation(); return false">
-        <ul>
-          <li id="list-people" class="query-item" comment="Lists all of the instances of foaf:Person along with their given and family names and any online accounts they hold.">List Person</li>
-          <li class="query-item" comment="Lists all of the donations in the triple store, along with the type, text, location, and contributor.">List Donations</li>
-        </ul>
+      <div class="ui-layout-center" ondragover="event.dataTransfer.effectAllowed='none'; event.dataTransfer.dropEffect='none'; event.stopPropagation(); return false">
+        <div id="query-tabs" class="tabs-bottom">
+          <ul>
+            <li><a href="#stored-queries">Stored Queries</a></li>
+            <li><a href="#concepts">Concepts</a></li>
+          </ul>
+          <div class="tabs-spacer"></div>
+          <div id="stored-queries">
+            <ul></ul>
+          </div>
+          <div id="concepts">
+            <ul></ul>
+          </div>
+        </div>
       </div>
       <div class="ui-layout-south" ondragover="event.dataTransfer.effectAllowed='none'; event.dataTransfer.dropEffect='none'; return false;">
       </div>
@@ -52,6 +102,9 @@
         </p>
         <textarea name="endpoint-comment" rows="6" cols="60"></textarea>
       </form>
+    </div>
+    <div id="error-dialog">
+      <p></p>
     </div>
   </body>
 </html>
