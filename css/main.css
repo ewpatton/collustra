@@ -118,7 +118,7 @@ div.vars > div {
 
 #query-results table {
     margin: 6pt;
-    font-size: 11pt;
+    font-size: 9pt;
     display: inline-block;
     vertical-align: top;
 }
@@ -126,7 +126,7 @@ div.vars > div {
 #query-results th, #query-results td {
     border: 1px solid black;
     border-spacing: 1px;
-    padding: 8px;
+    padding: 4px;
 }
 
 #left-pane .ui-layout-south div.spinner .background {
@@ -158,6 +158,10 @@ div.tables {
     white-space: nowrap;
 }
 
+div.tables>div {
+    position: relative;
+}
+
 div.tables div.drop div {
     display: none;
 }
@@ -173,6 +177,30 @@ div.tables div.sort, div.tables div.join {
     top: 0;
     left: 0;
     position: absolute;
+}
+
+div.tables .drop-helper {
+    display: none;
+}
+
+div.tables .internal-drop-target, div.tables .external-drop-target {
+    display: block;
+}
+
+div.tables .internal-drop-target div.sort {
+    display: block;
+}
+
+div.tables .external-drop-target div.join {
+    display: block;
+}
+
+div.tables div.join div.join-drop {
+    border: 4px solid rgba(0,96,0,0.4);
+}
+
+div.tables .external-drop-target div.join div.join-with {
+    border-color: rgba(0,256,0,0.6);
 }
 
 div.tables div.join div.visible {

@@ -39,14 +39,15 @@ var View = {
     };
     return {
       init: function() {
-        var opts = 
+        var opts =
           {modal:true,draggable:false,resizable:false,
            width:600,title:"SPARQL Endpoint Options",
            autoOpen: false, buttons:
            [{text: "Cancel", click: function() {
              $( this ).dialog( "close" );
              if ( endpointDialogDeferred ) {
-               endpointDialogDeferred.rejectWith( window, [ uri, "Cancelled by user." ] );
+               endpointDialogDeferred
+                 .rejectWith( window, [ uri, "Cancelled by user." ] );
              }
            }},
             {text: "Save", click: function() {
@@ -190,20 +191,244 @@ var View = {
 
     return {
       init: function() {
-        $("div#canvas").droppable({"accept":"li.query-item","activeClass":"drop-here",
-                                   "hoverClass":"drop-now","drop":drop,
-                                   "over":animateDragOver,"out":animateDragOut});
+        $("div#canvas").droppable(
+          {accept: "li.query-item", activeClass: "drop-here",
+           hoverClass: "drop-now", drop: drop,
+           over: animateDragOver, out: animateDragOut
+          });
       }
     };
   })(),
   QueryResults: (function() {
+    var dropWidth = 4;
+    var excludeJoinFrom = function(div) {
+      return function(el) {
+        if(el[0].tagName != "TH") return false;
+        var p1 = el.parentsUntil(div);
+        return p1[p1.length-1].tagName == "HTML";
+      };
+    };
+    var computeJoinDivs = function(table, joinDiv) {
+      joinDiv.empty();
+      var varTH = table.find("tr.query-variables th");
+      var tableTHPos = table.find("tr.query-header th").position();
+      for(var i=0;i<varTH.length;i++) {
+        var dropDiv = $("<div class='join-drop'>");
+        dropDiv.appendTo(joinDiv);
+        dropDiv.css("position","absolute");
+        dropDiv.css("top",varTH.position().top-tableTHPos.top);
+        dropDiv.css("left",$(varTH[i]).position().left-tableTHPos.left+1);
+        dropDiv.css("height",table.height()-varTH.position().top);
+        dropDiv.css("width",$(varTH[i]).width()+1);
+      }
+      joinDiv.find("div").droppable({
+        hoverClass:"join-with", tolerance:"pointer", activeClass:"visible",
+        greedy:true, accept: excludeJoinFrom(joinDiv.parent()),
+        drop: function(e, ui) {
+          var table1 = ui.draggable.parentsUntil("div.tables", "table");
+          var name1 = table1.find("tr.query-header th").text();
+          var table2 = $(e.target).parentsUntil("div.tables", "div.group")
+            .find("table");
+          var name2 = table2.find("tr.query-header th").text();
+          var var1 = ui.draggable.text();
+          var drop = $(e.target);
+          var i = drop.parent().children().index(drop);
+          var var2 = table2.find("tr.query-variables th").eq(i).text();
+          console.log("Joining '"+name2+"'."+var2+" to '"+name1+"'."+var1);
+        }
+      });
+    };
+    var computeSortDivs = function(table, sortDiv) {
+      sortDiv.empty();
+      var varTH = table.find("tr.query-variables th");
+      var tableTHPos = table.find("tr.query-header th").position();
+      for(var i=0;i<=varTH.length;i++) {
+        var dropDiv = $("<div class='drop'>");
+        dropDiv.appendTo(sortDiv);
+        dropDiv.css("position","absolute");
+        if(i == 0) {
+          dropDiv.css("left",0);
+        } else {
+          dropDiv.css("left", 0.5 * $(varTH[i-1]).width() +
+                      $(varTH[i-1]).position().left);
+        }
+        if(i == varTH.length) {
+          dropDiv.css("right",0);
+        } else if(i == 0) {
+          dropDiv.css("width",$(varTH[i]).width()*0.5+
+                      parseInt($(varTH[i]).css("padding")));
+        } else {
+          dropDiv.css("width",0.5*($(varTH[i]).width()+$(varTH[i-1]).width())+
+                      parseInt($(varTH[i-1]).css("padding"))*2+
+                      parseInt($(varTH[i-1]).css("border-width")));
+        }
+        dropDiv.css("top",varTH.position().top-tableTHPos.top);
+        dropDiv.css("height", table.height() -
+                    (varTH.position().top - tableTHPos.top));
+        var childDiv = $("<div>");
+        childDiv.css({"background-color":"#55f","top":0,"height":"100%",
+                      "position":"absolute"});
+        if( i == 0 ) {
+          childDiv.css({"left":0,"width":dropWidth});
+        } else if ( i == varTH.length ) {
+          childDiv.css({"right":0,"width":dropWidth});
+        } else {
+          var cell = $(varTH[i-1]);
+          childDiv.css({"left":
+                        cell.position().left - tableTHPos.left +
+                        cell.width() + 2*parseInt(cell.css("padding")) +
+                        (-dropWidth/2) - parseInt(dropDiv.css("left")),
+                        "width":dropWidth+1});
+        }
+        childDiv.appendTo(dropDiv);
+      }
+      sortDiv.children().droppable(
+        {"hoverClass":"reorder-hover",
+         "accept": "th",
+         "tolerance":"pointer",
+         "drop":function(event, ui) {
+           var th = ui.draggable;
+           var index = th.parent().children().index(th);
+           var dropIndex = $(event.target).parent().children()
+             .index(event.target);
+           var append = th.parent().children().length == dropIndex;
+           if(dropIndex == index || dropIndex == index + 1) {
+             // dropped at same location; the table shouldn't change
+             return;
+           }
+           if(dropIndex > index) dropIndex++;
+           var cells = [th];
+           var trs = th.parent().parent().children();
+           for(var i=2;i<trs.length;i++) {
+             var cell = trs.eq(i).children().eq(index)
+             cells.push(cell);
+           }
+           if(append) {
+             for(var i=1;i<trs.length;i++) {
+               cells[i-1].appendTo(trs.eq(i));
+             }
+           } else {
+             if(index < dropIndex) dropIndex--;
+             for(var i=1;i<trs.length;i++) {
+               cells[i-1].insertBefore(trs.eq(i).children().eq(dropIndex));
+             }
+           }
+           var group = th.parents("div.group");
+           computeSortDivs(group.find("table"), group.find(".sort"));
+           computeJoinDivs(group.find("table"), group.find(".join"));
+         }});
+    };
+    var generateTable = function(queryInfo, data) {
+      var head = data.head;
+      var results = data.results;
+      var table = $("<table>");
+      table.append("<tbody>");
+      table = table.find("tbody");
+      var tr = $("<tr>");
+      tr.addClass("query-header");
+      tr.appendTo(table);
+      var queryName = $("<th>");
+      queryName.attr("colspan",head.vars.length);
+      queryName.text(queryInfo.label);
+      queryName.attr("comment",queryInfo.comment);
+      queryName.appendTo(tr);
+      tr = $("<tr>");
+      tr.addClass("query-variables");
+      tr.appendTo(table);
+      var lookup = {};
+      $.each(head.vars, function(i, name) {
+        lookup[name] = i;
+        var th = $("<th>");
+        th.text(name);
+        th.appendTo(tr);
+      });
+      $.each(results.bindings, function(i, binding) {
+        tr = $("<tr>");
+        tr.appendTo(table);
+        var col = 0;
+        $.each(binding, function(key, value) {
+          if( col > lookup[key] ) {
+            throw "Unexpected unordered columns in SPARQL results";
+          }
+          while( col < lookup[key] ) col++;
+          var td = $("<td>");
+          td.appendTo( tr );
+          if( value.type=="uri" ) {
+            td.html( '&lt;<a href="'+value.value+'" target="_new">' +
+                     value.value + '</a>&gt;');
+          } else if( value.type=="literal" ) {
+            if( value.datatype == undefined &&
+                value["xml:lang"] == undefined ) {
+              td.text( '"' + value.value + '"');
+            } else if( value.datatype == XSD.Decimal ||
+                       value.datatype == XSD.Integer ||
+                       value.datatype == XSD.Int ||
+                       value.datatype == XSD.Short ||
+                       value.datatype == XSD.Float ||
+                       value.datatype == XSD.Double ) {
+              td.text( value.value );
+            } else if( value.datatype != undefined ) {
+              td.text( '"' + value.value + '"^^<' + value.datatype + '>' );
+            } else if( value["xml:lang"] != undefined ) {
+              td.text( '"' + value.value + '"@' + value["xml:lang"] );
+            } else {
+              // should be covered by first if(); being conservative
+              td.text( '"' + value.value + '"' );
+            }
+          } else {
+            td.text( value.value );
+          }
+          col++;
+        });
+      });
+      return table.parent();
+    };
+    var sortOpts = {items:"> div",placeholder:"ui-sortable-placeholder",
+                    handle:"tr.query-header th",axis:"x",
+                    forcePlaceholderSize: true,
+                    zIndex:1000,distance:5,tolerance:"pointer"};
+    var columnDragHelper = function(el) {
+      el = $(el.srcElement);
+      var table = el.parentsUntil(".grouper", "table");
+      var thPos = table.find("tr.query-header th").position();
+      var drag = $("<div class='draggable'>");
+      drag.css("margin-top", "6pt");
+      drag.css("background-color", "#000");
+      drag.css("zIndex", 1000000);
+      drag.css("opacity", 0.2);
+      drag.css("top", el.position().top - thPos.top);
+      drag.css("left", el.position().left - thPos.left);
+      drag.css("width", parseInt(el.css("width")) +
+               2 * parseInt(el.css("padding")));
+      drag.css("height", table.height() - el.position().top +
+               table.find("tr").length + 2);
+      return drag;
+    };
+    var columnDragStart = function(e, ui) {
+      var el = $(e.srcElement);
+      ui.helper.css("left", el.position().left -
+                    el.position().left);
+      $("#results-tabular div.drop-helper")
+        .addClass("external-drop-target");
+      el.parentsUntil("div.tables","div.group")
+        .find(".drop-helper")
+        .removeClass("external-drop-target")
+        .addClass("internal-drop-target");
+    };
+    var columnDragStop = function(e, ui) {
+      $("#results-tabular div.drop-helper")
+        .removeClass("external-drop-target")
+        .removeClass("internal-drop-target");
+    };
     return {
       init: function() {
-        $("#query-results .tabs-left").tabs({active:1}).addClass("ui-tabs-vertical ui-helper-clearfix");
+        $("#query-results .tabs-left").tabs({active:1})
+          .addClass("ui-tabs-vertical ui-helper-clearfix");
         $("#query-results .tabs-left > ul li").removeClass("ui-corner-top");
         $("#query-results .tabs-left ul").removeClass("ui-corner-all");
         $("#query-results .tabs-left").removeClass("ui-corner-all");
-        $("#query-results .tabs-left > ul").tooltip({"items":"a","show":{"delay":1500}});
+        $("#query-results .tabs-left > ul").tooltip({show:{delay:1500},
+                                                     items:"a"});
         $(window).bind("dropped_query", function(event, dropped) {
           var uri = dropped.attr("uri");
           View.QueryResults.addQueryResults(uri);
@@ -223,166 +448,28 @@ var View = {
                 "ajax":true,
                 "accepts":{"json":"application/sparql-results+json"},
                 "success":function(data, status, jqxhr) {
-                  var results = data.results;
-                  var head = data.head;
-                  var table = $("<table>");
-                  var grouperDiv = $("<div>");
+                  var grouperDiv = $("<div class='group'>");
+                  grouperDiv.appendTo("#results-tabular div.tables");
+                  var table = generateTable(queryInfo, data);
                   table.appendTo(grouperDiv);
-                  grouperDiv.appendTo("#query-results #results-tabular div.tables");
-                  table.append("<tbody>");
-                  table = table.find("tbody");
-                  var tr = $("<tr>");
-                  tr.addClass("query-header");
-                  tr.appendTo(table);
-                  var queryName = $("<th>");
-                  queryName.attr("colspan",head.vars.length);
-                  queryName.text(queryInfo.label);
-                  queryName.attr("comment",queryInfo.comment);
-                  queryName.appendTo(tr);
-                  tr = $("<tr>");
-                  tr.addClass("query-variables");
-                  tr.appendTo(table);
-                  var lookup = {};
-                  $.each(head.vars, function(i, name) {
-                    lookup[name] = i;
-                    var th = $("<th>");
-                    th.text(name);
-                    th.appendTo(tr);
-                  });
-                  $.each(results.bindings, function(i, binding) {
-                    tr = $("<tr>");
-                    tr.appendTo(table);
-                    var col = 0;
-                    $.each(binding, function(key, value) {
-                      if( col > lookup[key] ) {
-                        throw "Unexpected unordered columns in SPARQL results";
-                      }
-                      while( col < lookup[key] ) col++;
-                      var td = $("<td>");
-                      td.appendTo( tr );
-                      if( value.type=="uri" ) {
-                        td.html( '&lt;<a href="'+value.value+'" target="_new">' +
-                                 value.value + '</a>&gt;');
-                      } else if( value.type=="literal" ) {
-                        if( value.datatype == undefined &&
-                            value["xml:lang"] == undefined ) {
-                          td.text( '"' + value.value + '"');
-                        } else if( value.datatype == XSD.Decimal ||
-                                   value.datatype == XSD.Integer ||
-                                   value.datatype == XSD.Int ||
-                                   value.datatype == XSD.Short ||
-                                   value.datatype == XSD.Float ||
-                                   value.datatype == XSD.Double ) {
-                          td.text( value.value );
-                        } else if( value.datatype != undefined ) {
-                          td.text( '"' + value.value + '"^^<' + value.datatype + '>' );
-                        } else if( value["xml:lang"] != undefined ) {
-                          td.text( '"' + value.value + '"@' + value["xml:lang"] );
-                        } else {
-                          // should be covered by first if(); being conservative
-                          td.text( '"' + value.value + '"' );
-                        }
-                      } else {
-                        td.text( value.value );
-                      }
-                      col++;
-                    });
-                  });
-                  grouperDiv.parent().sortable({items:"> div",placeholder:"ui-sortable-placeholder",
-                                                handle:"tr.query-header th",axis:"x",
-                                                forcePlaceholderSize: true,
-                                                zIndex:1000,distance:5,tolerance:"pointer"});
-                  var div = $("<div>");
-                  div.appendTo(grouperDiv);
-                  var sortDiv = $("<div class='sort'>");
-                  sortDiv.appendTo(div);
-                  var joinDiv = $("<div class='join'>");
-                  joinDiv.appendTo(div);
-                  var pos = table.parent().position();
-                  div.css({"top":pos.top,"left":pos.left,"width":table.parent().css("width"),
-                           "height":table.parent().css("height"),"display":"none","margin":"6pt",
-                           "position":"absolute"});
-                  var varTH = table.find("tr.query-variables th");
-                  var tableTHPos = table.find("tr.query-header th").position();
-                  var dropWidth = 4;
-                  for(var i=0;i<=head.vars.length;i++) {
-                    var dropDiv = $("<div class='drop'>");
-                    dropDiv.css("position","absolute");
-                    dropDiv.appendTo(sortDiv);
-                    if(i == 0) {
-                      dropDiv.css("left",0);
-                    } else {
-                      dropDiv.css("left",0.5*$(varTH[i-1]).width()+$(varTH[i-1]).position().left);
-                    }
-                    if(i == head.vars.length) {
-                      dropDiv.css("right",0);
-                    } else if(i == 0) {
-                      dropDiv.css("width",$(varTH[i]).width()*0.5+parseInt($(varTH[i]).css("padding")));
-                    } else {
-                      dropDiv.css("width",0.5*($(varTH[i]).width()+$(varTH[i-1]).width())+
-                                  parseInt($(varTH[i-1]).css("padding"))*2+
-                                  parseInt($(varTH[i-1]).css("border-width")));
-                    }
-                    dropDiv.css("top",varTH.position().top-tableTHPos.top);
-                    dropDiv.css("height",table.height()-(varTH.position().top-tableTHPos.top));
-                    var childDiv = $("<div>");
-                    childDiv.css({"background-color":"#55f","top":0,"height":"100%",
-                                  "position":"absolute"});
-                    if( i == 0 ) {
-                      childDiv.css({"left":0,"width":dropWidth});
-                    } else if ( i == head.vars.length ) {
-                      childDiv.css({"right":0,"width":dropWidth});
-                    } else {
-                      childDiv.css({"left":(-dropWidth/2)+($(varTH[i-1]).position().left-tableTHPos.left+$(varTH[i-1]).width()+2*parseInt($(varTH[i-1]).css("padding")))-parseInt(dropDiv.css("left")),
-                                    "width":dropWidth+1});
-                    }
-                    childDiv.appendTo(dropDiv);
-                    if(i < head.vars.length) {
-                      dropDiv = $("<div class='join-drop'>");
-                      dropDiv.appendTo(joinDiv);
-                      dropDiv.css("position","absolute");
-                      dropDiv.css("top",varTH.position().top-tableTHPos.top);
-                      dropDiv.css("left",$(varTH[i]).position().left-tableTHPos.left+1);
-                      dropDiv.css("border",$(varTH[i]).css("padding")+" solid rgba(0,128,0,0.5)");
-                      dropDiv.css("height",table.height()-varTH.position().top-parseInt($(varTH[i]).css("padding")));
-                      dropDiv.css("width",$(varTH[i]).width()+1);
-                    }
-                  }
-                  joinDiv.find("div").droppable({greedy:true,activeClass:"visible",
-                                                 accept:function(el) {
-                                                   if(el[0].tagName != "TH") return false;
-                                                   var p1 = el.parentsUntil(div);
-                                                   return p1[p1.length-1].tagName == "HTML";
-                                                 }});
+                  grouperDiv.parent().sortable(sortOpts);
+                  var pos = table.position();
+                  var div = $("<div class='drop-helper'>");
+                  div.css({position:"absolute",top:pos.top,left:pos.left,
+                           margin:"6pt",height:table.css("height"),
+                           width:table.css("width")})
+                    .appendTo(grouperDiv);
+                  var sortDiv = $("<div class='sort'>").appendTo(div);
+                  computeSortDivs(table, sortDiv);
+                  var joinDiv = $("<div class='join'>").appendTo(div);
+                  computeJoinDivs(table, joinDiv);
                   table.find("tr.query-variables th").draggable({
-                    axis:"x",
-                    appendTo: div,
-                    helper:function(el) {
-                      el = $(el.srcElement);
-                      var tableTHPos = table.find("tr.query-header th").position();
-                      div.css("display", "block");
-                      var drag = $("<div class='draggable'>");
-                      drag.css("background-color","#000");
-                      drag.css("opacity",0.2);
-                      drag.css("top",el.position().top - tableTHPos.top);
-                      drag.css("left",el.position().left - tableTHPos.left);
-                      drag.css("width",parseInt(el.css("width"))+2*parseInt(el.css("padding")));
-                      drag.css("height",table.height()-el.position().top+table.find("tr").length+2);
-                      return drag;
-                    },start:function(e, ui) {
-                      var el = $(e.srcElement);
-                      ui.helper.css("left",el.position().left - tableTHPos.left);
-                      el.parent().parent()
-                    },stop:function(e, ui) {
-                      div.css("display", "none");
-                    }});
-                  div.find("div.drop").droppable({"hoverClass":"reorder-hover",
-                                                  "accept": "th",
-                                                  "tolerance":"pointer",
-                                                  "drop":function() {
-                                                    div.css("display","none");
-                                                  }});
-                  console.log(table.parent().css("width"));
+                    scroll:true, scrollSpeed: 20, scrollSensitivity: 100,
+                    axis:"x", refreshPositions:true,
+                    appendTo: $("#query-results div.tables"),
+                    helper: columnDragHelper, start: columnDragStart,
+                    stop: columnDragStop});
+                  div.find("div.drop");
                 },
                 "error":function(jqxhr, status, error) {
                 }}).always(function() {
