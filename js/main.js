@@ -1,3 +1,13 @@
+/**
+ * Main.js provides the basic setup for Collustra and is meant to link together
+ * the application model and the application view.
+ * @file
+ */
+
+/**
+ * A convenience function for debugging purposes. It should be removed for
+ * production code.
+ */
 var logArgs = function() { console.log(arguments); };
 
 function updateEndpoint(uri) {
@@ -29,9 +39,14 @@ function removeEndoint(uri) {
   }
 }
 
+/**
+ * Startup function that launches the application when the document is ready.
+ */
 $(document).ready(function() {
   // have jQuery propogate the dataTransfer object from the browser's event
   jQuery.event.props.push('dataTransfer');
+
+  // lay out the UI and enable context menus (should be moved to view.js)
   var rightPrefix = "listing-ui-layout-";
   var rightOpts = {
     closeable: true,
@@ -59,7 +74,11 @@ $(document).ready(function() {
   leftLayout = $("#left-pane").layout(leftOpts);
   rightLayout = $(".ui-layout-east").layout(rightOpts);
 
-  $.contextMenu({"selector":"div.query span","items":{remove:{name:"Remove Query",callback:function(event, data) { data.$trigger.parent().remove(); }}}});
+  $.contextMenu({"selector":"div.query span",
+                 "items":{remove:{name:"Remove Query",
+                                  callback:function(event, data) {
+                                    data.$trigger.parent().remove();
+                                  }}}});
 
   App.init();
   View.init();
