@@ -13,6 +13,13 @@ var PrefixHelper = {
     "TIME": "http://www.w3.org/2006/time#"
   },
   reverse_namespaces: {},
+  reverseMap: function(map) {
+    var result = {};
+    for(var ns in map) {
+      result[map[ns]] = ns;
+    }
+    return result;
+  },
   lookupUrl: function(url) {
     var deferred = $.Deferred();
     if(/#$/.test(url) || /\/$/.test(url)) {
@@ -41,11 +48,29 @@ var PrefixHelper = {
         });
     }
     return deferred.promise();
+  },
+  compact: function(uri, namespaces) {
+    if( !namespaces ) {
+      namespaces = PrefixHelper.reverse_namespaces;
+    } else {
+      namespaces = PrefixHelper.reverseMap(namespaces);
+    }
+    if(/#/.test(uri)) {
+      var idx = uri.indexOf("#")+1;
+      var base = uri.substring(0, idx);
+      if(base in namespaces) {
+        return namespaces[base].toLowerCase() + ":" + uri.substring(idx);
+      }
+    } else {
+      var idx = uri.lastIndexOf("/")+1;
+      var base = uri.substring(0, idx);
+      if(base in namespaces) {
+        return namespaces[base].toLowerCase() + ":" + uri.substring(idx);
+      }
+    }
   }
 };
 
 (function() {
-  for(var ns in PrefixHelper.namespaces) {
-    PrefixHelper.reverse_namespaces[PrefixHelper.namespaces[ns]] = ns;
-  }
+  PrefixHelper.reverse_namespaces = PrefixHelper.reverseMap(PrefixHelper.namespaces);
 })();

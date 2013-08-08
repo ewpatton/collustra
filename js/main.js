@@ -1,6 +1,12 @@
 /**
  * Main.js provides the basic setup for Collustra and is meant to link together
  * the application model and the application view.
+ *
+ * @copyright © 2013 Evan W. Patton
+ * @license
+ * Released under the MIT license
+ * {@link https://raw.github.com/ewpatton/collustra/master/LICENSE}
+ *
  * @file
  */
 

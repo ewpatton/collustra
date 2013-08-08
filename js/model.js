@@ -1,6 +1,35 @@
+/**
+ * @overview
+ * Model.js provides the query object model and the underlying application
+ * model for Collustra. It triggers a number of events that can be responded
+ * to in other components, such as the view system.
+ *
+ * @copyright © 2013 Evan W. Patton
+ * @license
+ * Released under the MIT license
+ * {@link https://raw.github.com/ewpatton/collustra/master/LICENSE}
+ *
+ * @file
+ */
+
+/** Stores the SPARQL endpoint descriptions **/
 var store = new rdfstore.Store({name:"rdfstore"},function(){});
+
+/** Stores the SPARQL descriptions (using SPIN) **/
 var queries = new rdfstore.Store({name:"querystore"},function(){});
 
+/**
+ * Traverses an rdf:List in the specified graph and converts it into a
+ * JavaScript array for the purposes of iteration. This method assumes that the
+ * list is well formed, specifically that starting from the root, each node has
+ * exactly one rdf:first element and exactly one rdf:rest element that either
+ * points to another rdf:List or points to rdf:nil. It will fail in the event
+ * that the list structure is not a tree (i.e. there is a cycle in the list).
+ * @param store An instance of rdfstore.Store that contains the list description
+ * @param graph A graph describing the list
+ * @param head Head element of the list to transform
+ * @returns A JavaScript array containing the elements in the rdf:List
+ */
 var rdfListToArray = function(store, graph, head) {
   var result = [];
   var rdfFirst = store.rdf.createNamedNode(RDF.first);
@@ -14,6 +43,10 @@ var rdfListToArray = function(store, graph, head) {
   return result;
 }
 
+/**
+ * @class
+ * @classdesc QueryType is an enumeration of the different SPARQL query types
+ */
 var QueryType = {
   "Select": 0,
   "Construct": 1,
@@ -28,21 +61,172 @@ var QueryType = {
   "Load": 10
 };
 
+/**
+ * The Query object is used to represent and manipulate SPARQL queries using
+ * the JavaScript Object Notation (JSON). The prototype function provides a
+ * number of useful functions for manipulating queries as well as converting
+ * them between different formats (specifically SPARQL and SPIN).
+ * @param uri URI identifying the new Query object
+ * @param type The type of query modeled; see also {@link QueryType}
+ * @constructor
+ * @todo Finish issue https://github.com/ewpatton/collustra/issues/8
+ */
 function Query(uri, type) {
   this.uri = uri;
   this.type = type;
+  this.projections = [];
   this.where = [];
   this.order = [];
   this.product = [];
   this.deletes = [];
   this.target = null;
+  this.variables = {};
+}
+
+(function() {
+/**
+ * Processes a SELECT query from a SPIN description in RDF.
+ * @memberof Query
+ * @private
+ * @param {rdfstore.Store} store
+ * @param {rdfstore.Graph} graph
+ * @param {Query} query
+ * @todo not yet complete
+ */
+var processSelectQuery= function(store, graph, query) {
+  var qnode = store.rdf.createNamedNode(query.uri);
+  var vars = graph.match(qnode, store.rdf.createNamedNode(SP.resultsVariables))
+    .toArray();
+  for(var i=0; i<vars.length; i++) {
+    var name = graph.match(vars[i], store.rdf.createNamedNode(SP.varName))
+      .toArray();
+    query.projects.push(new Query.Variable(vars[i].nominalValue,
+                                           name[0].nominalValue));
+  }
+  var where = graph.match(qnode, store.rdf.createNamedNode(SP.where)).toArray();
+  var subj = store.rdf.createNamedNode(SP.subject);
+  var pred = store.rdf.createNamedNode(SP.predicate);
+  var obj = store.rdf.createNamedNode(SP.object);
+  where = rdfListToArray(store, graph, where[0]);
+  for(var i=0; i<where.length;i ++) {
+    var triple = where[i];
+    var s = graph.match(triple, subj).toArray();
+    var p = graph.match(triple, pred).toArray();
+    var o = graph.match(triple, obj).toArray();
+  }
+};
+
+/**
+ * Creates a new Query object from a SPIN description stored in the specified
+ * store and graph and identified by the given URI.
+ * @param store An instance of rdfstore.Store
+ * @param graph A graph containing the SPIN description in store
+ * @param uri URI of the SPIN query to convert into a Query object
+ * @returns A new instance of Query containing a representation of the SPIN
+ * query
+ * @throws Exception if the SPIN description is invalid
+ */
+Query.fromSPIN = function(store, graph, uri) {
+  var qnode = store.rdf.createNamedNode(uri);
+  var type = store.rdf.createNamedNode(RDF.type);
+  var types = graph.match(qnode, type).toArray();
+  var queryType = null;
+  var query = null;
+  for(var i=0; i<types.length; i++) {
+    var t = types[i];
+    if(t.nominalValue == SP.Query) continue;
+    if(t.nominalValue.indexOf(SP.NS) === 0) {
+      switch(t.nominalValue) {
+      case SP.Select:
+        query = new Query(uri, QueryType.Select);
+        processSelectQuery(store, graph, query);
+        break;
+      default:
+        throw "Only accepts Select queries."
+      }
+      break;
+    }
+  }
+  if(query == null) {
+    throw "No query type found. Aborting.";
+  }
+  return query;
+}})();
+
+/**
+ * @class Variable
+ * @memberof Query
+ * @classdesc
+ * Variable
+ */
+Query.Variable = function(uri, varName) {
+  this.uri = uri;
+  this.varName = varName;
+}
+
+Query.Variable.prototype.toString = function() {
+  return "?" + this.varName;
+}
+
+Query.Resource = function(uri) {
+  this.uri = uri;
+}
+
+Query.Resource.prototype.toString = function(namespaces) {
+  var curie = PrefixHelper.compact(this.uri, namespaces);
+  return curie || "<" + this.uri + ">";
+}
+
+Query.GraphComponent = function() {
+}
+
+Query.BasicGraphPattern = function(subj, pred, obj) {
+  Query.GraphComponent.call(this);
+  this.subject = subj;
+  this.predicate = pred;
+  this.object = obj;
+}
+
+Query.BasicGraphPattern.prototype.toString = function(previous) {
+  if(previous instanceof Query.BasicGraphPattern) {
+    if(previous.subject == this.subject) {
+      if(previous.predicate == this.predicate) {
+        return ", " + this.object.toString() + " ";
+      } else {
+        return ";\n  " + (this.predicate.uri == RDF.type ? " a " :
+                           this.predicate.toString()) +
+          " " + this.object.toString() + " ";
+      }
+    } else {
+      return ".\n" + this.subject.toString() + " " +
+        (this.predicate.uri == RDF.type ? " a " : this.predicate.toString()) +
+        " " + this.object.toString() + " ";
+    }
+  } else {
+    if(this.predicate.uri == RDF.type) {
+      return this.subject.toString() + " a " + this.object.toString();
+    } else {
+      return this.subject.toString() + " " +
+        this.predicate.toString() + " " +
+        this.object.toString() + " "
+    }
+  }
 }
 
 Query.prototype.clone = function() {
-  
 }
 
+/**
+ * @namespace
+ * App
+ */
 var App = {
+  /**
+   * @class
+   * @classdesc
+   * App.Endpoints provides static methods for manipulating the collection of
+   * endpoints available in the current workspace.
+   */
   Endpoints: (function() {
     /**
      * Stores the set of endpoints loaded into the application
@@ -52,22 +236,32 @@ var App = {
       /**
        * Gets the endpoint object for a specific URI if the endpoint is loaded,
        * otherwise the method returns null.
-       * @param uri A URI naming a SPARQL endpoint.
-       * @return An object with the label and comment for the endpoint,
-       * otherwise null.
+       * @memberof App.Endpoints
+       * @static
+       * @param {string} uri A URI naming a SPARQL endpoint.
+       * @return {Object|null} An object with the label and comment for the
+       * endpoint, otherwise null.
        */
       getEndpoint: function(uri) {
         return items[uri];
       },
+
       /**
        * Adds a SPARQL endpoint description to the set of endpoints.
-       * @param uri URI naming the SPARQL endpoint.
-       * @param label Human-readable label for the endpoint used in the UI.
-       * @param comment A descriptive comment to help users understand
-       * the purpose of the query.
-       * @param deferred A jQuery Deferred object that will be deferred by
-       * the addEndpoint method once its internal state has been updated.
-       * @event Triggers the new_endpoint event.
+       * @memberof App.Endpoints
+       * @static
+       * @param {string} uri URI naming the SPARQL endpoint.
+       * @param {string} label Human-readable label for the endpoint used in
+       * the UI.
+       * @param {string} [comment=null] A descriptive comment to help users
+       * understand the purpose of the query.
+       * @param {jQuery.Deferred} [deferred=new jQuery.Deferred()] A jQuery
+       * Deferred object that will be resolved by the addEndpoint method once
+       * its internal state has been updated.
+       * @fires new_endpoint
+       * @returns {jQuery.Promise} A promise from a jQuery.Deferred that has
+       * been resolved with the endpoint URI. Useful for chaining with other
+       * API calls.
        */
       addEndpoint: function(uri, label, comment, deferred) {
         if(typeof comment == "object") {
@@ -79,14 +273,27 @@ var App = {
         if( comment ) {
           items[uri].comment = comment;
         }
+        /**
+         * @event new_endpoint
+         * @desc This event is fired with the window as <strong>this</strong>
+         * @param event {jQuery.Event} Default jQuery event object
+         * @param uri {string} URI of the endpoint added
+         */
         $(window).trigger("new_endpoint", [ uri ]);
         if( deferred != null ) {
           deferred.resolveWith(window, [ uri ]);
         }
       },
+
       /**
        * Updates the information about an endpoint.
-       * @param 
+       * @memberof App.Endpoints
+       * @static
+       * @param {string} oldUri
+       * @param {string} newUri
+       * @param {string} newLabel
+       * @param {string} newComment
+       * @fires updated_endpoint
        */
       updateEndpoint: function(oldUri, newUri, newLabel, newComment) {
         if( !items[oldUri] ) {
@@ -99,14 +306,48 @@ var App = {
           items[newUri] = items[oldUri];
           delete items[oldUri];
         }
+        /**
+         * @event updated_endpoint
+         * @desc Fired when an endpoint's information is updated
+         * @param {jQuery.Event} Default jQuery Event object
+         * @param {string} oldUri Old URI of the endpoint
+         * @param {string} newUri New URI of the endpoint (if changed)
+         */
         $(window).trigger("updated_endpoint", oldUri, newUri);
       },
+
+      /**
+       * Removes an endpoint from the endpoint store.
+       * @memberof App.Endpoints
+       * @static
+       * @param {string} uri
+       * @fires removed_endpoint
+       */
       removeEndpoint: function(uri) {
         if(items[uri] != undefined) {
           delete items[uri];
         }
+        /**
+         * @event removed_endpoint
+         * @desc Fired when an endpoint is removed from the workspace.
+         * @param {jQuery.Event} Default jQuery Event object
+         * @param {string} uri URI of the endpoint that was removed
+         **/
         $(window).trigger("removed_endpoint", [uri]);
       },
+
+      /**
+       * Loads the SPARQL Service Description from an endpoint if one exists.
+       * @memberof App.Endpoints
+       * @static
+       * @param {string} uri URI of a SPARQL endpoint
+       * @returns {jQuery.Promise} A jQuery Promise object that will be resolved
+       * when the HTTP transaction(s) complete with the endpoint and the content
+       * of the description is available. The promise will be rejected if the
+       * endpoint does not provide a service description (e.g. the service is
+       * unavailable, returns a non-200 HTTP status code, or does not contain,
+       * at a minimum, an rdfs:label.
+       */
       loadEndpointDescription: function(uri) {
         var deferred = $.Deferred();
         store.load("remote", uri, function(success, numTriples) {
@@ -144,8 +385,23 @@ var App = {
       }
     };
   })(),
+  /**
+   * @class QueryCache
+   * @classdesc
+   * QueryCache stores a collection of SPARQL queries used to power features of
+   * the workspace. This is not the same as the RDF data store, {@see queries},
+   * that stores the SPIN descriptions of queries read from external endpoints.
+   */
   QueryCache: (function() {
+    /**
+     * Map of query URIs to query text
+     * @private
+     */
     var items = {};
+    /**
+     * Initialization function for the query cache.
+     * @private
+     */
     var init = function() {
       $(window).bind("queryload", function(event, uri, text) {
         items[uri] = text;
@@ -180,7 +436,6 @@ var App = {
     };
     return {
       loadConceptsFromEndpoint: function() {
-        
       }
     };
   })(),

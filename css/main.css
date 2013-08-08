@@ -93,6 +93,22 @@ div.vars > div {
     border-left: 3px solid blue;
     margin: 4px 0px;
     padding: 4pt;
+    padding-right: 0;
+    position: relative;
+}
+
+div.vars > div ul {
+    left: 100%;
+    top: 0;
+    padding: 4pt;
+    background-color: #efe;
+    border: 1px solid black;
+    display: none;
+    position: absolute;
+}
+
+div.vars > div:hover ul {
+    display: block;
 }
 
 #endpoint-dialog {
