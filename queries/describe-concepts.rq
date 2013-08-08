@@ -1,0 +1,9 @@
+PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+
+SELECT DISTINCT ?Concept ?Label ?Comment WHERE {
+  [] a ?Concept
+  OPTIONAL {
+    ?Concept rdfs:label ?Label ;
+      rdfs:comment ?Comment
+  }
+}
