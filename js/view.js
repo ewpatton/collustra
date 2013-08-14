@@ -181,11 +181,12 @@ var View = {
              function(i, value) {
                var span = $("<div>");
                div.append(span);
-               span.text(value["name"]);
+               span.text(value["varName"]);
                span.tooltip({"show":{delay:"1000"},"items":"*",
                              "content":value["comment"]});
              });
       var queryId = App.QueryCanvas.instantiate(uri);
+      div.attr("queryId", queryId);
       $(window).trigger("dropped_query", [$(ui.draggable)]);
     };
 
@@ -430,7 +431,7 @@ var View = {
         $("#query-results .tabs-left > ul").tooltip({show:{delay:1500},
                                                      items:"a"});
         $(window).bind("dropped_query", function(event, dropped) {
-          var uri = dropped.attr("uri");
+          var queryId = dropped.attr("queryId");
           View.QueryResults.addQueryResults(uri);
         });
       },

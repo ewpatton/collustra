@@ -83,7 +83,55 @@ function Query(uri, type) {
   this.variables = {};
 }
 
+Query.prototype.toString = function(opts) {
+  var result = "";
+  if ( this.type == QueryType.Select ) {
+    result += "SELECT";
+    if ( this.where.length == 0 ) {
+      result += " *";
+    } else {
+      for ( var i = 0; i < this.projections.length; i++ ) {
+        result += " ";
+        result += this.projections[i].toString();
+      }
+    }
+    result += " WHERE {\n";
+    for ( var i = 0; i < this.where.length; i++ ) {
+      result += this.where[i].toString( i ? this.where[i-1] : null );
+    }
+    result += "\n}";
+    for ( var i = 0; i < this.order.length; i++ ) {
+      result += " " + this.order[i].toString();
+    }
+    if ( opts && opts["offset"] ) {
+      result += " OFFSET " + opts.offset;
+    }
+    if ( opts && opts["limit"] ) {
+      result += " LIMIT " + opts.limit;
+    }
+  }
+  return result;
+};
+
 (function() {
+/**
+ * Checks whether the given node is a variable. If so, it returns the value of
+ * the sp:varName property.
+ * @param store Rdfstore used for creating named nodes
+ * @param graph Graph containing the node description
+ * @param node Node to test
+ * @returns null if the node is not an sp:Variable, otherwise the string value
+ * of sp:varName.
+ */
+var isVariable = function(store, graph, node) {
+  var varName = store.rdf.createNamedNode(SP.varName);
+  var names = graph.match(node, varName).toArray();
+  if ( names && names.length > 0 ) {
+    return names[0].object.nominalValue;
+  }
+  return null;
+};
+
 /**
  * Processes a SELECT query from a SPIN description in RDF.
  * @memberof Query
@@ -95,24 +143,74 @@ function Query(uri, type) {
  */
 var processSelectQuery= function(store, graph, query) {
   var qnode = store.rdf.createNamedNode(query.uri);
-  var vars = graph.match(qnode, store.rdf.createNamedNode(SP.resultsVariables))
+  var vars = graph.match(qnode, store.rdf.createNamedNode(SP.resultVariables))
     .toArray();
-  for(var i=0; i<vars.length; i++) {
-    var name = graph.match(vars[i], store.rdf.createNamedNode(SP.varName))
-      .toArray();
-    query.projects.push(new Query.Variable(vars[i].nominalValue,
-                                           name[0].nominalValue));
+  if ( vars.length > 0 ) {
+    vars = rdfListToArray(store, graph, vars[0].object);
+    var varName = store.rdf.createNamedNode(SP.varName);
+    for(var i=0; i<vars.length; i++) {
+      var name = graph.match(vars[i], varName).toArray();
+      var projection = new Query.Variable(vars[i].nominalValue,
+                                          name[0].object.nominalValue)
+      var rdfsLabel = queries.rdf.createNamedNode(RDFS.label);
+      var rdfsComment = queries.rdf.createNamedNode(RDFS.comment);
+      var label = graph.match(vars[i], rdfsLabel).toArray();
+      if ( label.length > 0 ) {
+        projection.label = label[0].object.nominalValue;
+      }
+      var comment = graph.match(vars[i], rdfsComment).toArray();
+      if ( comment.length > 0 ) {
+        projection.comment = comment[0].object.nominalValue;
+      }
+      query.projections.push(projection);
+    }
   }
   var where = graph.match(qnode, store.rdf.createNamedNode(SP.where)).toArray();
+  where = rdfListToArray(store, graph, where[0].object);
   var subj = store.rdf.createNamedNode(SP.subject);
   var pred = store.rdf.createNamedNode(SP.predicate);
   var obj = store.rdf.createNamedNode(SP.object);
-  where = rdfListToArray(store, graph, where[0]);
   for(var i=0; i<where.length;i ++) {
+    // TODO this block assumes that everything in the where clause is a triple
+    // pattern, which is not necessarily true (e.g. OPTIONAL, FILTER, etc.)
     var triple = where[i];
     var s = graph.match(triple, subj).toArray();
-    var p = graph.match(triple, pred).toArray();
-    var o = graph.match(triple, obj).toArray();
+    if ( s.length > 0 ) {
+      var svar = isVariable(store, graph, s[0].object);
+      var p = graph.match(triple, pred).toArray();
+      var pvar = isVariable(store, graph, p[0].object);
+      var o = graph.match(triple, obj).toArray();
+      var ovar = isVariable(store, graph, o[0].object);
+      if ( svar ) {
+        svar = new Query.Variable(s[0].object.nominalValue, svar);
+      } else {
+        svar = new Query.Resource(s[0].object.nominalValue,
+                                  s[0].object.interfaceName == "BlankNode");
+      }
+      if ( pvar ) {
+        pvar = new Query.Variable(p[0].object.nominalValue, pvar);
+      } else {
+        pvar = new Query.Resource(p[0].object.nominalValue,
+                                  p[0].object.interfaceName == "BlankNode");
+      }
+      if ( ovar ) {
+        ovar = new Query.Variable(o[0].object.nominalValue, ovar);
+      } else {
+        if ( o[0].object.interfaceName == "Literal" ) {
+          var type = null;
+          if ( o[0].object.language ) {
+            type = { "lang": o[0].object.language };
+          } else if ( o[0].object.datatype ) {
+            type = { "datatype": o[0].object.datatype };
+          }
+          ovar = new Query.Literal(o[0].object.nominalValue, type);
+        } else {
+          ovar = new Query.Resource(o[0].object.nominalValue,
+                                    o[0].object.interfaceName == "BlankNode");
+        }
+      }
+      query.where.push(new Query.BasicGraphPattern(svar, pvar, ovar));
+    }
   }
 };
 
@@ -133,7 +231,7 @@ Query.fromSPIN = function(store, graph, uri) {
   var queryType = null;
   var query = null;
   for(var i=0; i<types.length; i++) {
-    var t = types[i];
+    var t = types[i].object;
     if(t.nominalValue == SP.Query) continue;
     if(t.nominalValue.indexOf(SP.NS) === 0) {
       switch(t.nominalValue) {
@@ -151,7 +249,9 @@ Query.fromSPIN = function(store, graph, uri) {
     throw "No query type found. Aborting.";
   }
   return query;
-}})();
+};
+
+})();
 
 /**
  * @class Variable
@@ -168,13 +268,30 @@ Query.Variable.prototype.toString = function() {
   return "?" + this.varName;
 }
 
-Query.Resource = function(uri) {
+Query.Variable.prototype.clone = function() {
+  var copy = new Query.Variable(this.uri, this.varName);
+  return copy;
+}
+
+/**
+ * @class Resource
+ * @memberof Query
+ * @classdesc
+ * Resource
+ */
+Query.Resource = function(uri, isBnode) {
   this.uri = uri;
+  this.bnode = isBnode;
 }
 
 Query.Resource.prototype.toString = function(namespaces) {
   var curie = PrefixHelper.compact(this.uri, namespaces);
   return curie || "<" + this.uri + ">";
+}
+
+Query.Resource.prototype.clone = function() {
+  var copy = new Query.Resource(this.uri, this.bnode);
+  return copy;
 }
 
 Query.GraphComponent = function() {
@@ -213,7 +330,38 @@ Query.BasicGraphPattern.prototype.toString = function(previous) {
   }
 }
 
+Query.BasicGraphPattern.prototype.clone = function() {
+  var copy = new Query.BasicGraphPattern();
+  copy.subject = this.subject;
+  copy.predicate = this.predicate;
+  copy.object = this.object;
+  return copy;
+}
+
+var cloneArray = function(arr) {
+  return $.map(arr, function(el) {
+    if( el.clone ) {
+      return el.clone();
+    } else if ( el instanceof Array ) {
+      return cloneArray( el );
+    } else {
+      return $.extend(true, {}, arr);
+    }
+  });
+}
+
 Query.prototype.clone = function() {
+  var copy = new Query();
+  copy.uri = this.uri;
+  copy.type = this.type;
+  copy.projections = cloneArray(this.projections);
+  copy.where = cloneArray(this.where);
+  copy.order = cloneArray(this.order);
+  copy.product = cloneArray(this.product);
+  copy.deletes = cloneArray(this.deletes);
+  copy.target = this.target
+  copy.variables = cloneArray(this.variables);
+  return copy;
 }
 
 /**
@@ -483,6 +631,18 @@ var App = {
           var rdfRest = queries.rdf.createNamedNode(RDF.rest);
           $.each(solutions, function(i, solution) {
             var uri = solution["uri"].value;
+            var label = solution["label"].value;
+            var comment = solution["comment"] ? solution["comment"].value
+              : null;
+            var query = Query.fromSPIN( queries, graph, uri );
+            query.label = label;
+            query.endpoint = endpoint;
+            if ( comment ) {
+              query.comment = comment;
+            }
+            items[uri] = query;
+            queryUris.push(uri);
+            return;
             var uriNode = queries.rdf.createNamedNode(uri);
             var label = solution["label"].value;
             var comment = solution["comment"] ? solution["comment"].value : null;
@@ -504,6 +664,9 @@ var App = {
       });
     }
     return {
+      getQuery: function(uri) {
+        return items[uri];
+      },
       getQueries: function() {
         return items;
       },
@@ -540,6 +703,9 @@ var App = {
         if ( items[key] == undefined ) {
           items[key] = [];
         }
+        var queryId = key + "_" + items[key].length;
+        items[key].push( App.QueryList.getQuery(uri).clone() );
+        return queryId;
       },
       destroy: function(queryId) {
       }
