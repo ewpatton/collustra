@@ -3,12 +3,10 @@
  * Model.js provides the query object model and the underlying application
  * model for Collustra. It triggers a number of events that can be responded
  * to in other components, such as the view system.
- *
  * @copyright © 2013 Evan W. Patton
  * @license
  * Released under the MIT license
  * {@link https://raw.github.com/ewpatton/collustra/master/LICENSE}
- *
  * @file
  */
 
@@ -983,6 +981,24 @@ var App = {
         return queryId;
       },
       destroy: function(queryId) {
+      },
+      reorderProjections: function(queryId, order) {
+        var query = App.QueryCanvas.getQuery( queryId );
+        var map = $.map(order, function(x) { return query.getVariable(x); });
+        var checker = {};
+        $.each(query.projections, function(i, v) {
+          checker[v.varName] = 1;
+        });
+        $.each(map, function(i, v) {
+          checker[v.varName]--;
+        });
+        for ( var key in checker ) {
+          if ( checker[key] != 0 ) {
+            throw "Variable name not in new ordering: " + key;
+          }
+        }
+        query.projections = map;
+        $(window).trigger("projection_changed", [ queryId ] );
       },
       /**
        * Accept two "query" objects of the form:

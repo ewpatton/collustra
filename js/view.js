@@ -317,9 +317,12 @@ var View = {
                cells[i-1].insertBefore(trs.eq(i).children().eq(dropIndex));
              }
            }
+           var variables = th.parent().find("th").map(function(i, el) { return $(el).text(); });
            var group = th.parents("div.group");
-           computeSortDivs(group.find("table"), group.find(".sort"));
-           computeJoinDivs(group.find("table"), group.find(".join"));
+           var table = group.find("table");
+           App.QueryCanvas.reorderProjections(table.attr("queryId"), variables);
+           computeSortDivs(table, group.find(".sort"));
+           computeJoinDivs(table, group.find(".join"));
          }});
     };
     var generateTable = function(queryInfo, data) {
