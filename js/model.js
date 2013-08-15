@@ -83,11 +83,28 @@ function Query(uri, type) {
   this.variables = {};
 }
 
+/**
+ * Returns a projection (if a number) or a variable (if string)
+ */
+Query.prototype.getVariable = function(varid) {
+  if ( typeof varid == "string" ) {
+    return this.variables[varid];
+  } else if ( typeof varid == "number" ) {
+    return this.projections[varid];
+  } else {
+    throw "Unexpected varid '"+varid+"' in Query.getVariable";
+  }
+}
+
 Query.prototype.toString = function(opts) {
   var result = "";
   if ( this.type == QueryType.Select ) {
+    for( var prefix in PrefixHelper.namespaces ) {
+      result += "PREFIX " + prefix.toLowerCase() + ": <" +
+        PrefixHelper.namespaces[prefix] + ">\n";
+    }
     result += "SELECT";
-    if ( this.where.length == 0 ) {
+    if ( this.projections.length == 0 ) {
       result += " *";
     } else {
       for ( var i = 0; i < this.projections.length; i++ ) {
@@ -100,6 +117,9 @@ Query.prototype.toString = function(opts) {
       result += this.where[i].toString( i ? this.where[i-1] : null );
     }
     result += "\n}";
+    if ( this.order.length > 0 ) {
+      result += " ORDER BY";
+    }
     for ( var i = 0; i < this.order.length; i++ ) {
       result += " " + this.order[i].toString();
     }
@@ -133,6 +153,17 @@ var isVariable = function(store, graph, node) {
 };
 
 /**
+ * @todo support entire SPARQL expressions here...
+ */
+var expressionToObject = function(store, graph, query, node) {
+  var varName = isVariable( store, graph, node );
+  if ( !varName ) {
+    throw "Only variables are supported at this time.";
+  }
+  return query.variables[varName];
+};
+
+/**
  * Processes a SELECT query from a SPIN description in RDF.
  * @memberof Query
  * @private
@@ -162,6 +193,7 @@ var processSelectQuery= function(store, graph, query) {
       if ( comment.length > 0 ) {
         projection.comment = comment[0].object.nominalValue;
       }
+      query.variables[projection.varName] = projection;
       query.projections.push(projection);
     }
   }
@@ -183,18 +215,33 @@ var processSelectQuery= function(store, graph, query) {
       var ovar = isVariable(store, graph, o[0].object);
       if ( svar ) {
         svar = new Query.Variable(s[0].object.nominalValue, svar);
+        if ( query.variables[svar.varName] == undefined ) {
+          query.variables[svar.varName] = svar;
+        } else {
+          svar = query.variables[svar.varName];
+        }
       } else {
         svar = new Query.Resource(s[0].object.nominalValue,
                                   s[0].object.interfaceName == "BlankNode");
       }
       if ( pvar ) {
         pvar = new Query.Variable(p[0].object.nominalValue, pvar);
+        if ( query.variables[pvar.varName] == undefined ) {
+          query.variables[pvar.varName] = pvar;
+        } else {
+          pvar = query.variables[pvar.varName];
+        }
       } else {
         pvar = new Query.Resource(p[0].object.nominalValue,
                                   p[0].object.interfaceName == "BlankNode");
       }
       if ( ovar ) {
         ovar = new Query.Variable(o[0].object.nominalValue, ovar);
+        if ( query.variables[ovar.varName] == undefined ) {
+          query.variables[ovar.varName] = ovar;
+        } else {
+          ovar = query.variables[ovar.varName];
+        }
       } else {
         if ( o[0].object.interfaceName == "Literal" ) {
           var type = null;
@@ -211,6 +258,30 @@ var processSelectQuery= function(store, graph, query) {
       }
       query.where.push(new Query.BasicGraphPattern(svar, pvar, ovar));
     }
+  }
+  var ordering = graph.match(qnode, store.rdf.createNamedNode(SP.orderBy))
+    .toArray();
+  if ( ordering.length > 0 ) {
+    ordering = rdfListToArray(store, graph, ordering[0].object);
+    var rdfType = store.rdf.createNamedNode(RDF.type);
+    var spExpression = store.rdf.createNamedNode(SP.expression);
+    $.each(ordering, function(i, order) {
+      var triples = graph.match(order, rdfType).toArray();
+      if ( triples.length > 0 ) {
+        if ( triples[0].object.nominalValue == SP.Asc ) {
+          triples = graph.match(order, spExpression).toArray();
+          var ex = expressionToObject( store, graph, query, triples[0].object );
+          query.order.push( new Query.OrderBy( Query.Order.ASC, ex ) );
+        } else if ( triples[0].object.nominalValue == SP.Desc ) {
+          triples = graph.match(order, spExpression).toArray();
+          var ex = expressionToObject( store, graph, query, triples[0].object );
+          query.order.push( new Query.OrderBy( Query.Order.DESC, ex ) );
+        } else {
+          console.warn("Unexpected type while ordering: " +
+                       triples[0].object.nominalValue);
+        }
+      }
+    });
   }
 };
 
@@ -273,6 +344,61 @@ Query.Variable.prototype.clone = function() {
   return copy;
 }
 
+Query.Variable.prototype.equals = function(other) {
+  if ( other == null ) {
+    return false;
+  } else if ( !( other instanceof Query.Variable ) ) {
+    return false;
+  } else if (other == this) {
+    return true;
+  }
+  return this.uri == other.uri && this.varName == other.varName;
+
+}
+
+Query.Order = {"ASC": 1, "DESC": 0}
+
+Query.OrderBy = function(dir, ex) {
+  this.direction = dir;
+  this.expression = ex;
+};
+
+Query.OrderBy.prototype.toString = function() {
+  var result = null;
+  if ( this.direction == Query.Order.ASC ) {
+    result = "ASC(";
+  } else {
+    result = "DESC(";
+  }
+  result += this.expression.toString();
+  result += ")";
+  return result;
+}
+
+Query.OrderBy.prototype.clone = function() {
+  var copy = new Query.OrderBy(this.direction, this.expression);
+  return copy;
+}
+
+Query.JoinedQueryType = {
+  "Substitution": 0,
+  "Subquery": 1,
+  "Service": 2
+};
+
+Query.JoinedVariable = function(query1, query2, type) {
+  this.uri = query1.variable.uri;
+  this.varName = query1.variable.varName;
+  this.orgQuery = query1;
+  this.joinedTo = query2;
+  this.joinType = type || Query.JoinedQueryType.Substitution;
+}
+
+Query.JoinedVariable.prototype = Object.create(Query.Variable.prototype);
+Query.JoinedVariable.prototype.toString = function() {
+  return "?"+this.varName;
+}
+
 /**
  * @class Resource
  * @memberof Query
@@ -294,6 +420,17 @@ Query.Resource.prototype.clone = function() {
   return copy;
 }
 
+Query.Resource.prototype.equals = function(other) {
+  if ( other == null ) {
+    return false;
+  } else if ( !( other instanceof Query.Resource ) ) {
+    return false;
+  } else if ( this == other ) {
+    return true;
+  }
+  return this.uri == other.uri && this.bnode == other.bnode;
+};
+
 Query.GraphComponent = function() {
 }
 
@@ -306,8 +443,8 @@ Query.BasicGraphPattern = function(subj, pred, obj) {
 
 Query.BasicGraphPattern.prototype.toString = function(previous) {
   if(previous instanceof Query.BasicGraphPattern) {
-    if(previous.subject == this.subject) {
-      if(previous.predicate == this.predicate) {
+    if(previous.subject.equals( this.subject )) {
+      if(previous.predicate.equals( this.predicate )) {
         return ", " + this.object.toString() + " ";
       } else {
         return ";\n  " + (this.predicate.uri == RDF.type ? " a " :
@@ -321,7 +458,7 @@ Query.BasicGraphPattern.prototype.toString = function(previous) {
     }
   } else {
     if(this.predicate.uri == RDF.type) {
-      return this.subject.toString() + " a " + this.object.toString();
+      return this.subject.toString() + " a " + this.object.toString() + " ";
     } else {
       return this.subject.toString() + " " +
         this.predicate.toString() + " " +
@@ -344,10 +481,31 @@ var cloneArray = function(arr) {
       return el.clone();
     } else if ( el instanceof Array ) {
       return cloneArray( el );
+    } else if ( el instanceof Object ) {
+      return $.extend(true, {}, el);
     } else {
-      return $.extend(true, {}, arr);
+      return el;
     }
   });
+}
+
+var cloneDict = function(obj) {
+  var copy = {};
+  for(var key in obj) {
+    if(obj.hasOwnProperty(key)) {
+      var el = obj[key];
+      if( el.clone ) {
+        copy[key] = el.clone();
+      } else if ( el instanceof Array ) {
+        copy[key] = cloneArray( el );
+      } else if ( el instanceof Object ) {
+        copy[key] = $.extend(true, {}, el);
+      } else {
+        return el;
+      }
+    }
+  }
+  return copy;
 }
 
 Query.prototype.clone = function() {
@@ -360,9 +518,118 @@ Query.prototype.clone = function() {
   copy.product = cloneArray(this.product);
   copy.deletes = cloneArray(this.deletes);
   copy.target = this.target
-  copy.variables = cloneArray(this.variables);
+  copy.variables = cloneDict(this.variables);
+  if ( this.label ) {
+    copy.label = this.label;
+  }
+  if ( this.endpoint ) {
+    copy.endpoint = this.endpoint;
+  }
+  if ( this.prefixes ) {
+    copy.prefixes = cloneDict( this.prefixes );
+  } else {
+    copy.prefixes = {};
+  }
   return copy;
 }
+
+Query.JoinedQuery = function(query1, query2, type) {
+  type = type || Query.JoinedQueryType.Substitution;
+  // this won't be a valid URI, but it is internal for now.
+  this.uri = query1.query.uri + query2.query.type;
+  this.type = query1.query.type;
+  this.projections = [];
+  this.joinType = type;
+  var map = {};
+  var map2 = {};
+  this.joinVariable = new Query.JoinedVariable(query1, query2, type);
+  map[query1.variable.varName] = this.joinVariable;
+  map2[query2.variable.varName] = this.joinVariable;
+  for ( var i = 0; i < query1.query.projections.length; i++ ) {
+    if ( query1.variable.equals( query1.query.projections[i] ) ) {
+      this.projections.push( this.joinVariable );
+    } else {
+      var copy = query1.query.projections[i].clone();
+      map[copy.varName] = copy;
+      this.projections.push( copy );
+    }
+  }
+  for ( var i = 0; i < query2.query.projections.length; i++ ) {
+    if ( query2.variable.equals( query2.query.projections[i] ) ) {
+      // joining here, but it is already in this.projections so just continue
+      continue;
+    } else {
+      var copy = query2.query.projections[i].clone();
+      while ( map[copy.varName] != undefined ||
+              map2[copy.varName] != undefined ) {
+        var idx = copy.varName.search(/[0-9]+$/);
+        if ( idx >= 0 ) {
+          var count = parseInt( copy.varName.substr( idx ) );
+          copy.varName = copy.varName.substr( 0, idx ) +
+            ( count + 1 );
+        } else {
+          copy.varName += "1";
+        }
+      }
+      map2[query2.query.projections[i].varName] = copy;
+      this.projections.push( copy );
+    }
+  }
+  this.where = [];
+  this.order = [];
+  if ( type == Query.JoinedQueryType.Substitution ) {
+    // TODO this mechanism does not yet rename non-projected variables
+    for ( var i = 0; i < query1.query.where.length; i++ ) {
+      var copy = query1.query.where[i].clone();
+      copy.subject = map[copy.subject.varName] || copy.subject;
+      copy.predicate = map[copy.predicate.varName] || copy.predicate;
+      copy.object = map[copy.object.varName] || copy.object;
+      this.where.push( copy );
+    }
+    for ( var i = 0; i < query2.query.where.length; i++ ) {
+      var copy = query2.query.where[i].clone();
+      copy.subject = map2[copy.subject.varName] || copy.subject;
+      copy.predicate = map2[copy.predicate.varName] || copy.predicate;
+      copy.object = map2[copy.object.varName] || copy.object;
+      this.where.push( copy );
+    }
+    for ( var i = 0; i < query1.query.order.length; i++ ) {
+      var copy = query1.query.order[i].clone();
+      if ( copy.expression instanceof Query.Variable ) {
+        copy.expression = map[copy.expression.varName];
+      }
+      if ( copy["expression"] == undefined ) {
+        throw "Expected an order expression to be a projected variable";
+      }
+      this.order.push( copy );
+    }
+    for ( var i = 0; i < query2.query.order.length; i++ ) {
+      var copy = query2.query.order[i].clone();
+      if ( copy.expression instanceof Query.Variable ) {
+        copy.expression = map2[copy.expression.varName];
+      }
+      if ( copy["expression"] == undefined ) {
+        throw "Expected an order expression to be a projected variable";
+      }
+      this.order.push( copy );
+    }
+  }
+  this.product = [];
+  this.deletes = [];
+  this.target = query1.query.target;
+  this.variables = $.extend({}, map, map2);
+  this.label = query1.query.label + " joined with " + query2.query.label;
+  this.comment = query1.query.comment;
+  // Will not work when joining a query with joined query, you'll get
+  // something like [ endpoint3, [ endpoint1, endpoint2 ] ]
+  if ( query1.query.endpoint == query2.query.endpoint ) {
+    this.endpoint = query1.query.endpoint;
+  } else {
+    this.endpoint = [ query1.query.endpoint, query2.query.endpoint ];
+  }
+};
+
+Query.JoinedQuery.prototype = new Query();
 
 /**
  * @namespace
@@ -697,6 +964,12 @@ var App = {
   QueryCanvas: (function() {
     var items = {};
     return {
+      getQuery: function(queryId) {
+        var idx = queryId.lastIndexOf("_");
+        var queryArray = items[queryId.substr(0, idx)];
+        var index = parseInt(queryId.substr(idx+1));
+        return queryArray[index];
+      },
       instantiate: function(uri) {
         // hash to get a reasonably small identifier. collision is unlikely.
         var key = md5(uri);
@@ -704,12 +977,50 @@ var App = {
           items[key] = [];
         }
         var queryId = key + "_" + items[key].length;
-        items[key].push( App.QueryList.getQuery(uri).clone() );
+        var query = App.QueryList.getQuery(uri).clone();
+        query.queryId = queryId;
+        items[key].push( query );
         return queryId;
       },
       destroy: function(queryId) {
+      },
+      /**
+       * Accept two "query" objects of the form:
+       * {"query": Query, "variable": Variable}
+       */
+      join: function(query1, query2) {
+        if ( ! ( query1.query instanceof Query ) ) {
+          query1.query = App.QueryCanvas.getQuery( query1.query );
+        }
+        if ( ! ( query1.variable instanceof Query.Variable ) ) {
+          query1.variable = query1.query.getVariable( query1.variable );
+        }
+        if ( ! ( query2.query instanceof Query ) ) {
+          query2.query = App.QueryCanvas.getQuery( query2.query );
+        }
+        if ( ! ( query2.variable instanceof Query.Variable ) ) {
+          query2.variable = query2.query.getVariable( query2.variable );
+        }
+        // create joined query
+        var joinQuery = new Query.JoinedQuery(query1, query2);
+        var newKey = md5( joinQuery.uri );
+        if ( items[newKey] == undefined ) {
+          items[newKey] = [];
+        }
+        var newQueryId = newKey + "_" + items[newKey].length;
+        joinQuery.queryId = newQueryId;
+        items[newKey].push( joinQuery );
+        console.log(joinQuery);
+        window.tempQuery = joinQuery;
+        // remove old query2
+        $(window).trigger( "removed_query", [ query2.query.queryId ]);
+        // update old query1 with new queryId
+        $(window).trigger( "updated_query", [ query1.query.queryId,
+                                              newQueryId ]);
       }
     };
+  })(),
+  CommandStack: (function() {
   })(),
   init: function() {
   }

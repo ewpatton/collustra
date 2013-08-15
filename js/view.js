@@ -187,7 +187,7 @@ var View = {
              });
       var queryId = App.QueryCanvas.instantiate(uri);
       div.attr("queryId", queryId);
-      $(window).trigger("dropped_query", [$(ui.draggable)]);
+      $(window).trigger("dropped_query", [queryId]);
     };
 
     return {
@@ -235,7 +235,10 @@ var View = {
           var drop = $(e.target);
           var i = drop.parent().children().index(drop);
           var var2 = table2.find("tr.query-variables th").eq(i).text();
+          var query1 = {"query": table2.attr("queryId"), "variable": var2};
+          var query2 = {"query": table1.attr("queryId"), "variable": var1};
           console.log("Joining '"+name2+"'."+var2+" to '"+name1+"'."+var1);
+          App.QueryCanvas.join(query1, query2);
         }
       });
     };
@@ -430,20 +433,30 @@ var View = {
         $("#query-results .tabs-left").removeClass("ui-corner-all");
         $("#query-results .tabs-left > ul").tooltip({show:{delay:1500},
                                                      items:"a"});
-        $(window).bind("dropped_query", function(event, dropped) {
-          var queryId = dropped.attr("queryId");
-          View.QueryResults.addQueryResults(uri);
+        $(window).bind("dropped_query", function(event, queryId) {
+          View.QueryResults.addQueryResults( queryId );
+        });
+        $(window).bind("removed_query", function(event, queryId) {
+          View.QueryResults.removeQueryResults( queryId );
+        });
+        $(window).bind("updated_query", function(event, oldId, newId) {
+          if ( newId != undefined && oldId != newId ) {
+            View.QueryResults.removeQueryResults( oldId );
+            View.QueryResults.addQueryResults( newId );
+          } else {
+            // TODO some update mechanism here...
+          }
         });
       },
       addQueryResults: function(uri) {
         $("#query-results .spinner").css("display","block");
-        var queryInfo = App.QueryList.getQueries()[uri];
+        var queryInfo = App.QueryCanvas.getQuery(uri);
         var endpoint = queryInfo.endpoint;
         var graph = null;
         queries.graph(endpoint, function(success, g) {
           graph = g;
         });
-        var sparql = SpinHelper.toSPARQL(queries, graph, uri, {"limit": 25});
+        var sparql = queryInfo.toString({limit: 25});
         $.ajax(endpoint,
                {"data":{"output":"json","query":sparql},
                 "ajax":true,
@@ -452,6 +465,7 @@ var View = {
                   var grouperDiv = $("<div class='group'>");
                   grouperDiv.appendTo("#results-tabular div.tables");
                   var table = generateTable(queryInfo, data);
+                  table.attr("queryId", uri);
                   table.appendTo(grouperDiv);
                   grouperDiv.parent().sortable(sortOpts);
                   var pos = table.position();
@@ -476,6 +490,11 @@ var View = {
                 }}).always(function() {
                   $("#query-results .spinner").css("display","none");
                 });
+      },
+      removeQueryResults: function(queryId) {
+        var table = $("div.tables table[queryId='"+queryId+"']");
+        table.parent().css("display", "none");
+        window.setTimeout(function() { table.parent().remove(); }, 100);
       }
     };
   })(),
