@@ -1,5 +1,37 @@
+/**
+ * @overview
+ * View.js provides user interface functionality for Collustra. It uses the
+ * jQuery and jQueryUI frameworks to provide drag-and-drop functionality for
+ * constructing SPARQL queries. It also provides mechanisms for visualizing
+ * results in different ways.
+ * @copyright © 2013 Evan W. Patton
+ * @license
+ * Released under the MIT license
+ * {@link https://raw.github.com/ewpatton/collustra/master/LICENSE}
+ * @file
+ */
+/**
+ * View provides the user interface logic for Collustra.
+ * @namespace
+ */
 var View = {
+  /**
+   * @class
+   * @classdesc
+   * View.Endpoints provides functionality to add, edit, and remove endpoints to
+   * Collustra's model. It will also configure HTML5 drag and drop so that users
+   * can drag links to external SPARQL endpoints directly into the application
+   * to bootstrap the discovery and construction process.
+   */
   Endpoints: (function() {
+    /**
+     * Handles when a user drops a URL into the endpoint view.
+     * @memberof View.Endpoints
+     * @private
+     * @param {jQuery.Event} event A jQuery event wrapping the HTML5 drop event
+     * from the browser.
+     * @returns false to cancel the default browser behavior
+     */
     var dropUrl = function(event) {
       var items = event.dataTransfer.items;
       for(var i=0;i<items.length;i++) {
@@ -18,6 +50,11 @@ var View = {
       return false;
     };
 
+    /**
+     * Configures the HTML5 drop events for the endpoint view.
+     * @memberof View.Endpoints
+     * @private
+     **/
     var configureEndpointDrop = function() {
       $("#endpoints").bind("dragover", function(event) {
         event.stopPropagation();
@@ -25,8 +62,30 @@ var View = {
       }).bind("drop", dropUrl);
     };
 
+    /**
+     * Stores a deferred for the endpoint dialog.
+     * @type jQuery.Deferred
+     * @memberof View.Endpoints
+     * @private
+     */
     var endpointDialogDeferred = null;
+
+    /**
+     * Stores the original URI used to open the endpoint dialog.
+     * @type string
+     * @memberof View.Endpoints
+     * @private
+     */
     var endpointDialogURI = null;
+
+    /**
+     * Creates a new &lt;option&gt; element for adding to the select element
+     * in the endpoint view.
+     * @memberof View.Endpoints
+     * @private
+     * @param {string} uri URI of the endpoint to create an &lt;option&gt;
+     * element for in the select element.
+     */
     var create = function(uri) {
       var endpoint = App.Endpoints.getEndpoint(uri);
       $("#endpoints").find("option.default").remove();
@@ -37,7 +96,12 @@ var View = {
       }
       opt.appendTo("#endpoints select");
     };
+
     return {
+      /**
+       * Initializes the endpoint viewport.
+       * @memberof View.Endpoints
+       */
       init: function() {
         var opts =
           {modal:true,draggable:false,resizable:false,
@@ -74,6 +138,17 @@ var View = {
         });
         configureEndpointDrop();
       },
+      /**
+       * Shows the endpoint dialog for a given URI and an optional deferred
+       * object to resolve once the user dismisses the dialog.
+       * @param {string} uri URI for the endpoint to display
+       * @param {jQuery.Deferred|null} newDeferred If given, the deferred
+       * object will be resolved or rejected once the user completes the form
+       * or cancels it.
+       * @returns {jQuery.Promise} Either a fresh jQuery promise or one
+       * created by calling newDeferred's promise method.
+       * @memberof View.Endpoints
+       */
       showDialogForEndpoint: function(uri, newDeferred) {
         deferred = newDeferred || $.Deferred();
         var endpoint = App.Endpoints.getEndpoint(uri);
@@ -88,6 +163,13 @@ var View = {
         dialog.dialog("open");
         return deferred.promise();
       },
+      /**
+       * Refreshes the endpoint view.
+       * @param {string} uri
+       * @param {jQuery.Deferred|null} deferred
+       * @returns {jQuery.Promise}
+       * @memberof View.Endpoints
+       */
       refresh: function(uri, deferred) {
         if ( uri != null && typeof uri == "object" ) {
           deferred = uri;
@@ -99,7 +181,20 @@ var View = {
     };
     // end Endpoints
   })(),
+  /**
+   * @class
+   * @classdesc
+   * QueryList manages the list of queries and concepts.
+   * @memberof View
+   */
   QueryList: (function() {
+    /**
+     * Generates a draggable helper to represent a query dragged from the query
+     * list to the query canvas.
+     * @returns {jQuery} A jQuery object wrapping a &lt;div&gt; element.
+     * @memberof View.QueryList
+     * @private
+     */
     var helper = function() {
       var self = $(this);
       var elem = $("<div>");
@@ -108,13 +203,30 @@ var View = {
       return elem;
     };
 
+    /**
+     * Helper function to handle the selection mechanism.
+     * @param {jQuery.Event} event A jQuery event representing a mouse event
+     * @param {object} ui A jQueryUI event object
+     * @memberof View.QueryList
+     * @private
+     */
     var doSelect = function(event, ui) {
       if ( $(this).hasClass("ui-selected") ) $(this).removeClass("ui-selected");
     }
 
+    /**
+     * Options passed to $.draggable in the query list
+     * @memberof View.QueryList
+     * @private
+     */
     var dragOpts ={"helper":"clone","appendTo":"body","helper":helper,
                    "start":doSelect,"revert":"invalid"};
     return {
+      /**
+       * Initializes the query list, including the tabs interface and event
+       * handlers.
+       * @memberof View.QueryList
+       */
       init: function() {
         $("div#query-list").tooltip({"show":{"delay":1000},"items":"li",
                                      "content":function() {
@@ -136,6 +248,11 @@ var View = {
             .then(View.QueryList.refresh, View.showError);
         });
       },
+      /**
+       * Refreshes the list of queries and concepts, usually in response to an
+       * endpoint being added or removed
+       * @memberof View.QueryList
+       */
       refresh: function() {
         var queries = App.QueryList.getQueries();
         var ul = $("#query-list #stored-queries ul");
@@ -155,16 +272,49 @@ var View = {
         }
       }
     };
+    // end QueryList
   })(),
+  /**
+   * @class
+   * @classdesc
+   * The Canvas renders the projections of queries and also provides mechanisms
+   * for users to extend the queries by exploring the underlying data or by
+   * taking advantage of loaded schema.
+   * @memberof View
+   */
   Canvas: (function() {
+    /**
+     * Provides CSS animation when the user crosses the boundary between the
+     * query list and the canvas.
+     * @param {jQuery.Event} event A jQuery event representing a mouse event
+     * @param {object} ui jQuery UI object
+     * @memberof View.Canvas
+     * @private
+     */
     var animateDragOver = function(event, ui) {
       ui.helper.addClass("drag-query", 200);
     }
 
+    /**
+     * Provides CSS animation when the user crosses the boundary between the
+     * query list and the canvas.
+     * @param {jQuery.Event} event A jQuery event representing a mouse event
+     * @param {object} ui jQuery UI object
+     * @memberof View.Canvas
+     * @private
+     */
     var animateDragOut = function(event, ui) {
       ui.helper.removeClass("drag-query", 200);
     }
 
+    /**
+     * Helper function handles when a user drops a query object from the query
+     * list.
+     * @param {jQuery.Event} event A jQuery event representing a mouse event
+     * @param {object} ui jQuery UI object
+     * @memberof View.Canvas
+     * @private
+     */
     var drop = function(event, ui) {
       var self = $(this);
       var query = ui.helper.clone().appendTo(self)
@@ -191,6 +341,10 @@ var View = {
     };
 
     return {
+      /**
+       * Initializes the canvas. Registers droppable for the canvas element.
+       * @memberof View.Canvas
+       */
       init: function() {
         $("div#canvas").droppable(
           {accept: "li.query-item", activeClass: "drop-here",
@@ -200,8 +354,37 @@ var View = {
       }
     };
   })(),
+  /**
+   * @class
+   * @classdesc
+   * QueryResults provides an interface to render the results of queries in a
+   * tabular view. Queries can be reordered in the view by dragging the headers.
+   * Variables can be dragged within a table to reorder the variables in the
+   * result set or they can be dragged between queries to create join patterns.
+   * @memberof View
+   * @todo Move to a separate file once issue #5 is completed. Implement the
+   * API defined to satisfy #5.
+   */
   QueryResults: (function() {
+    /**
+     * The default width of a drop div (simulates the border growing to accept
+     * the drop)
+     * @memberof View.QueryResults
+     * @private
+     * @constant
+     */
     var dropWidth = 4;
+
+    /**
+     * Generator used to create a helper function to determine whether a div
+     * should trigger the display of the join div or the sort div (i.e. is the
+     * div dragged externally or internally from its parent table)
+     * @param {jQuery} div A jQuery object wrapping a div
+     * @returns {Function} A function that tests whether or not an element is a
+     * child of the supplied div
+     * @memberof View.QueryResults
+     * @private
+     */
     var excludeJoinFrom = function(div) {
       return function(el) {
         if(el[0].tagName != "TH") return false;
@@ -209,6 +392,18 @@ var View = {
         return p1[p1.length-1].tagName == "HTML";
       };
     };
+
+    /**
+     * Generates a set of divs used to highlight when dropping a dragged column
+     * will result in that column being joined to another in a different query
+     * result table.
+     * @param {jQuery} table A jQuery object wrapping a table that will be used
+     * to generate the join divs.
+     * @param {jQuery} joinDiv A jQuery object wrapping a div that will contain
+     * the join divs.
+     * @memberof View.QueryResults
+     * @private
+     */
     var computeJoinDivs = function(table, joinDiv) {
       joinDiv.empty();
       var varTH = table.find("tr.query-variables th");
@@ -242,6 +437,16 @@ var View = {
         }
       });
     };
+
+    /**
+     * Generates a div containing the necessary divs to visualize where a drop
+     * will cause columns to be reordered.
+     * @param {jQuery} table A jQuery object wrapping the results table
+     * @param {jQuery} sortDiv A jQuery object wrapping a div to populate with
+     * the sort divs.
+     * @memberof View.QueryList
+     * @private
+     */
     var computeSortDivs = function(table, sortDiv) {
       sortDiv.empty();
       var varTH = table.find("tr.query-variables th");
@@ -325,6 +530,17 @@ var View = {
            computeJoinDivs(table, group.find(".join"));
          }});
     };
+
+    /**
+     * Generates a table for the given query and result set.
+     * @param {Query} queryInfo
+     * @param {object} data JSON object containing results in the
+     * application/sparql-results+json format.
+     * @returns {jQuery} A div element containing the table and
+     * supporting HTML elements (e.g. drag helpers, etc.)
+     * @memberof View.QueryList
+     * @private
+     */
     var generateTable = function(queryInfo, data) {
       var head = data.head;
       var results = data.results;
@@ -390,10 +606,25 @@ var View = {
       });
       return table.parent();
     };
+
+    /**
+     * Options passed to $.sortable to enable query tables to be reordered
+     * @memberof View.QueryList
+     * @private
+     */
     var sortOpts = {items:"> div",placeholder:"ui-sortable-placeholder",
                     handle:"tr.query-header th",axis:"x",
                     forcePlaceholderSize: true,
                     zIndex:1000,distance:5,tolerance:"pointer"};
+
+    /**
+     * Generates a drag helper to represent a column during a drag operation.
+     * @param {jQuery.Event} el A jQuery Event representing the drag start event
+     * @returns {jQuery} A DOM element wrapped in a jQuery object used by
+     * jQuery UI to represent the drag.
+     * @memberof View.QueryList
+     * @private
+     */
     var columnDragHelper = function(el) {
       el = $(el.srcElement);
       var table = el.parentsUntil(".grouper", "table");
@@ -411,6 +642,14 @@ var View = {
                table.find("tr").length + 2);
       return drag;
     };
+
+    /**
+     * Helper function to configure CSS when a column drag operation begins.
+     * @param {jQuery.Event} e A jQuery event object representing a mouse event
+     * @param {object} ui A jQuery UI object
+     * @memberof View.QueryList
+     * @private
+     */
     var columnDragStart = function(e, ui) {
       var el = $(e.srcElement);
       ui.helper.css("left", el.position().left -
@@ -422,12 +661,27 @@ var View = {
         .removeClass("external-drop-target")
         .addClass("internal-drop-target");
     };
+
+    /**
+     * Helper function to update CSS when a dragging operation for a column
+     * is stopped.
+     * @param {jQuery.Event} e A jQuery event object representing a mouse event
+     * @param {object} ui A jQuery UI object
+     * @memberof View.QueryList
+     * @private
+     */
     var columnDragStop = function(e, ui) {
       $("#results-tabular div.drop-helper")
         .removeClass("external-drop-target")
         .removeClass("internal-drop-target");
     };
     return {
+      /**
+       * Initializes the QueryList view, sets up the left-hand tabs for selecting
+       * a query results view, and registers event listeners for a number of
+       * query-related events.
+       * @memberof View.QueryList
+       */
       init: function() {
         $("#query-results .tabs-left").tabs({active:1})
           .addClass("ui-tabs-vertical ui-helper-clearfix");
@@ -451,9 +705,16 @@ var View = {
           }
         });
       },
-      addQueryResults: function(uri) {
+      /**
+       * Adds a new table to the set of query results for the query
+       * identified by the given queryId.
+       * @param {string} queryId A queryId returned by
+       * {@link App.QueryCanvas.instantiate}
+       * @memberof View.QueryResults
+       */
+      addQueryResults: function(queryId) {
         $("#query-results .spinner").css("display","block");
-        var queryInfo = App.QueryCanvas.getQuery(uri);
+        var queryInfo = App.QueryCanvas.getQuery(queryId);
         var endpoint = queryInfo.endpoint;
         var graph = null;
         queries.graph(endpoint, function(success, g) {
@@ -468,7 +729,7 @@ var View = {
                   var grouperDiv = $("<div class='group'>");
                   grouperDiv.appendTo("#results-tabular div.tables");
                   var table = generateTable(queryInfo, data);
-                  table.attr("queryId", uri);
+                  table.attr("queryId", queryId);
                   table.appendTo(grouperDiv);
                   grouperDiv.parent().sortable(sortOpts);
                   var pos = table.position();
@@ -494,6 +755,12 @@ var View = {
                   $("#query-results .spinner").css("display","none");
                 });
       },
+      /**
+       * Removes a query results table from the results view.
+       * @param {string} queryId A queryId returned by
+       * {@link App.QueryCanvas.instantiate}
+       * @memberof View.QueryResults
+       */
       removeQueryResults: function(queryId) {
         var table = $("div.tables table[queryId='"+queryId+"']");
         table.parent().css("display", "none");
@@ -501,10 +768,19 @@ var View = {
       }
     };
   })(),
+  /**
+   * Shows an error dialog
+   * @param {string} error An error string
+   * @memberof View
+   */
   showError: function(error) {
     $("#error-dialog p").text(error);
     $("#error-dialog").dialog("open");
   },
+  /**
+   * Initializes the application views.
+   * @memberof View
+   */
   init: function() {
     View.Endpoints.init();
     View.QueryList.init();
