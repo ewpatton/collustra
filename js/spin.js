@@ -30,7 +30,6 @@ var SpinHelper = {
       var variables = rdfListToArray(store, graph, triples[0].object);
       $.each(variables, function(i, n) {
         triples = graph.match(n, store.rdf.createNamedNode(SP.varName)).toArray();
-        //if(i > 0) query += " ";
         query += "?"+triples[0].object.nominalValue+" ";
       });
     }

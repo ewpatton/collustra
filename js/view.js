@@ -219,8 +219,8 @@ var View = {
      * @memberof View.QueryList
      * @private
      */
-    var dragOpts ={"helper":"clone","appendTo":"body","helper":helper,
-                   "start":doSelect,"revert":"invalid"};
+    var dragOpts ={"appendTo":"body","helper":helper,"start":doSelect,
+                   "revert":"invalid"};
     return {
       /**
        * Initializes the query list, including the tabs interface and event
@@ -797,7 +797,7 @@ var View = {
       south__minSize: "200",
       south__size: "300",
       center__minHeight: 500,
-      center__showOverflowOnHover: true,
+      center__showOverflowOnHover: true
     };
     var leftOpts = $.extend({}, rightOpts);
     leftOpts.center__showOverflowOnHover = false;

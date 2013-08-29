@@ -55,8 +55,7 @@ var QueryType = {
   "Modify": 6,
   "Load": 7,
   "Clear": 8,
-  "Create": 9,
-  "Load": 10
+  "Create": 9
 };
 
 /**
@@ -351,7 +350,6 @@ Query.Variable.prototype.equals = function(other) {
     return true;
   }
   return this.uri == other.uri && this.varName == other.varName;
-
 }
 
 Query.Order = {"ASC": 1, "DESC": 0}
@@ -402,6 +400,11 @@ Query.JoinedVariable.prototype.toString = function() {
  * @memberof Query
  * @classdesc
  * Resource
+ * @constructor
+ * @param {string} uri URI represented by the resource, e.g.
+ * http://www.w3.org/1999/02/22-rdf-syntax-ns#type
+ * @param {boolean} isBnode true if the resource is meant to represent a blank
+ * node
  */
 Query.Resource = function(uri, isBnode) {
   this.uri = uri;

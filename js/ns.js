@@ -14,7 +14,7 @@
   window.RDFS = {
     NS: ns,
     label: ns+"label",
-    comment: ns+"comment",
+    comment: ns+"comment"
   };
 })();
 
