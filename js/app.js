@@ -32,7 +32,7 @@ var App = {
       return function(success, numTriples) {
         var rdf = store.rdf;
         var process = function() {
-          store.graph(function(success, graph) {
+          store.graph(uri, function(found, graph) {
             var arr = graph.match(null, rdf.createNamedNode(SD.endpoint),
                                   rdf.createNamedNode(uri)).toArray();
             var subj = uri;
@@ -57,14 +57,13 @@ var App = {
               App.Endpoints.getEndpoint(uri).useProxy = proxy;
               return deferred.promise();
             } else {
-              // TODO remove this workaround for a logic bug
-              deferred.reject();
-              return;
-              // TODO this is the "correct" code
-              if ( !proxy ) {
+              // could not read endpoint and haven't tried to proxy
+              if ( !success && !proxy ) {
                 deferred = App.Endpoints
                   .loadEndpointDescription(uri, deferred, true);
               } else {
+                // either we succeeded and there wasn't a label, or
+                // we failed even with SPARQL proxy
                 deferred.reject();
               }
             }
@@ -73,10 +72,6 @@ var App = {
         if(success) {
           process();
         } else {
-          // TODO remove this workaround for a logic bug
-          deferred.reject();
-          return;
-          // TODO this is the "correct" code
           if ( !proxy ) {
             $.ajax(uri,
                    {"data":{"query":"describe <"+uri+">"},
@@ -242,14 +237,46 @@ var App = {
                          });
               return deferred.promise();
             }, function(jqxhr, status, error) {
+              // SPARQL proxy is a last resort. if it fails then
+              // we don't have any further options but to abort.
               console.log(error);
               deferred.reject();
               return deferred.promise();
             });
+        } else {
+          return $.ajax(uri,
+                        {"headers":{"Accept":"text/turtle"}})
+            .then(function(data, status, jqxhr) {
+              // load the turtle description and process it
+              store.load("text/turtle", data, uri,
+                         loadEndpointCallback(uri, deferred, proxy));
+              return deferred.promise();
+            }, function(jqxhr, status, error) {
+              // endpoint does not return CORS permissions
+              if(jqxhr.state() == "rejected" && jqxhr.status == 0) {
+                return App.Endpoints
+                  .loadEndpointDescription(uri, deferred, true);
+              } else if(jqxhr.status == 404) {
+                // endpoint supports CORS but does not support endpoint
+                // descriptions
+                return $.ajax(uri,
+                              {"data":{"query":"describe <"+uri+">"},
+                               "headers":{"Accept":"text/turtle"}})
+                  .then(function(data) {
+                    store.load("text/turtle", data, uri,
+                               loadEndpointCallback(uri, deferred, proxy));
+                    return deferred.promise();
+                  }, function(jqxhr) {
+                    deferred.reject();
+                    return deferred.promise();
+                  });
+              } else {
+                // some unexpected scenario; reject
+                deferred.reject();
+                return deferred.promise();
+              }
+            });
         }
-        var rdf = store.rdf;
-        store.load("remote", uri, loadEndpointCallback(uri, deferred, proxy));
-        return deferred.promise();
       }
     };
   })(),
