@@ -57,6 +57,10 @@ var App = {
               App.Endpoints.getEndpoint(uri).useProxy = proxy;
               return deferred.promise();
             } else {
+              // TODO remove this workaround for a logic bug
+              deferred.reject();
+              return;
+              // TODO this is the "correct" code
               if ( !proxy ) {
                 deferred = App.Endpoints
                   .loadEndpointDescription(uri, deferred, true);
