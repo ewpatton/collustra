@@ -54,6 +54,7 @@ var App = {
             }
             if ( label != "" ) {
               App.Endpoints.addEndpoint(uri, label, comment, deferred);
+              App.Endpoints.getEndpoint(uri).useProxy = proxy;
               return deferred.promise();
             } else {
               if ( !proxy ) {
@@ -68,6 +69,10 @@ var App = {
         if(success) {
           process();
         } else {
+          // TODO remove this workaround for a logic bug
+          deferred.reject();
+          return;
+          // TODO this is the "correct" code
           if ( !proxy ) {
             $.ajax(uri,
                    {"data":{"query":"describe <"+uri+">"},
