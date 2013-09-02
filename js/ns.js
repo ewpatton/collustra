@@ -19,6 +19,14 @@
 })();
 
 (function() {
+  var ns = "http://www.w3.org/2002/07/owl#";
+  window.OWL = {
+    NS: ns,
+    Class: ns+"Class"
+  };
+})();
+
+(function() {
   var ns = "http://www.w3.org/ns/sparql-service-description#";
   window.SD = {
     NS: ns,

@@ -14,16 +14,20 @@
  * A convenience function for debugging purposes. It should be removed for
  * production code.
  */
-var logArgs = function() { console.log(arguments); };
+function logArgs() {
+  console.log(arguments);
+}
 
 function updateEndpoint(uri) {
   var dialog = $("#endpoint-dialog");
   var newUri = dialog.find("[name='endpoint-url']").val();
   var newLabel = dialog.find("[name='endpoint-label']").val();
   var newComment = dialog.find("[name='endpoint-comment']").val();
-  if ( newUri == "" || newLabel == "" ) return false;
+  if ( newUri === "" || newLabel === "" ) {
+    return false;
+  }
   var opt = $("#endpoints [value='"+uri+"']");
-  if ( opt.length == 0 ) {
+  if ( opt.length === 0 ) {
     opt = $("<option>");
     opt.appendTo("#endpoints select");
     if ( !$("#endpoints").hasClass("hasItems") ) {
@@ -38,7 +42,7 @@ function updateEndpoint(uri) {
 
 function removeEndoint(uri) {
   $("#endpoints [value='"+uri+"']").remove();
-  if ( $("#endpoints select").children().length == 0 ) {
+  if ( $("#endpoints select").children().length === 0 ) {
     var opt = $("<option>");
     opt.text("No Endpoint");
     opt.appendTo("#endpoints select");

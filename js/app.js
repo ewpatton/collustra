@@ -28,82 +28,6 @@ var App = {
      */
     var items = {};
 
-    var loadEndpointCallback = function(uri, deferred, proxy) {
-      return function(success, numTriples) {
-        var rdf = store.rdf;
-        var process = function() {
-          store.graph(uri, function(found, graph) {
-            var arr = graph.match(null, rdf.createNamedNode(SD.endpoint),
-                                  rdf.createNamedNode(uri)).toArray();
-            var subj = uri;
-            if(arr.length > 0) {
-              subj = arr[0].subject.value || arr[0].subject.nominalValue;
-            }
-            var node = rdf.createNamedNode(subj);
-            arr = graph.match(node, rdf.createNamedNode(RDFS.label))
-              .toArray();
-            var label = "";
-            if(arr.length > 0) {
-              label = arr[0].object.value || arr[0].object.nominalValue;
-            }
-            var comment = "";
-            arr = graph.match(node, rdf.createNamedNode(RDFS.comment))
-              .toArray();
-            if(arr.length > 0) {
-              comment = arr[0].object.value || arr[0].object.nominalValue;
-            }
-            if ( label != "" ) {
-              App.Endpoints.addEndpoint(uri, label, comment, deferred);
-              App.Endpoints.getEndpoint(uri).useProxy = proxy;
-              return deferred.promise();
-            } else {
-              // could not read endpoint and haven't tried to proxy
-              if ( !success && !proxy ) {
-                deferred = App.Endpoints
-                  .loadEndpointDescription(uri, deferred, true);
-              } else {
-                // either we succeeded and there wasn't a label, or
-                // we failed even with SPARQL proxy
-                deferred.reject();
-              }
-            }
-          });
-        }
-        if(success) {
-          process();
-        } else {
-          if ( !proxy ) {
-            $.ajax(uri,
-                   {"data":{"query":"describe <"+uri+">"},
-                    "headers":{"Accept":"text/turtle"}})
-              .then(function(data, status, jqxhr) {
-                store.load("text/turtle", data,
-                           function(success, result) {
-                             if ( success ) {
-                               process();
-                             } else {
-                               console.log(result);
-                               deferred.reject();
-                             }
-                           });
-                return deferred;
-              }, function(jqxhr, status, error) {
-                if ( error == "rejected" ) {
-                  return App.Endpoints
-                    .loadEndpointDescription(uri, deferred, true);
-                } else {
-                  deferred.reject();
-                  return deferred;
-                }
-              });
-          } else {
-            deferred.reject();
-          }
-        }
-        return deferred;
-      };
-    };
-
     return {
       /**
        * Gets the endpoint object for a specific URI if the endpoint is loaded,
@@ -135,25 +59,17 @@ var App = {
        * been resolved with the endpoint URI. Useful for chaining with other
        * API calls.
        */
-      addEndpoint: function(uri, label, comment, deferred) {
-        if(typeof comment == "object") {
-          // no comment, comment field contains the deferred object
-          deferred = comment;
-          comment = null;
-        }
-        items[uri] = {"uri":uri, "label":label};
-        if( comment ) {
-          items[uri].comment = comment;
-        }
+      addEndpoint: function(endpoint, deferred) {
+        items[endpoint.uri] = endpoint;
         /**
          * @event new_endpoint
          * @desc This event is fired with the window as <strong>this</strong>
          * @param event {jQuery.Event} Default jQuery event object
          * @param uri {string} URI of the endpoint added
          */
-        $(window).trigger("new_endpoint", [ uri ]);
-        if( deferred != null ) {
-          deferred.resolveWith(window, [ uri ]);
+        $(window).trigger("new_endpoint", [ endpoint.uri ]);
+        if( deferred !== null ) {
+          deferred.resolveWith(window, [ endpoint.uri ]);
         }
       },
 
@@ -174,7 +90,7 @@ var App = {
         items[oldUri].uri = newUri;
         items[oldUri].label = newLabel;
         items[oldUri].comment = newComment;
-        if ( oldUri != newUri ) {
+        if ( oldUri !== newUri ) {
           items[newUri] = items[oldUri];
           delete items[oldUri];
         }
@@ -196,7 +112,7 @@ var App = {
        * @fires removed_endpoint
        */
       removeEndpoint: function(uri) {
-        if(items[uri] != undefined) {
+        if(items[uri] !== undefined) {
           delete items[uri];
         }
         /**
@@ -220,63 +136,11 @@ var App = {
        * unavailable, returns a non-200 HTTP status code, or does not contain,
        * at a minimum, an rdfs:label.
        */
-      loadEndpointDescription: function(uri, deferred, proxy) {
-        var deferred = deferred || $.Deferred();
-        if ( proxy ) {
-          return $.ajax("http://logd.tw.rpi.edu/sparql",
-                        {"data":{"query":"describe <"+uri+">",
-                                 "service-uri":uri,
-                                 "query-option":"text",
-                                 "output":"rdfn3"},
-                         "headers":{"Accept":"text/turtle"}})
-            .then(function(data, status, jqxhr) {
-              store.load("text/turtle", data,
-                         function(success, results) {
-                           deferred =
-                             loadEndpointCallback(uri, deferred, proxy);
-                         });
-              return deferred.promise();
-            }, function(jqxhr, status, error) {
-              // SPARQL proxy is a last resort. if it fails then
-              // we don't have any further options but to abort.
-              console.log(error);
-              deferred.reject();
-              return deferred.promise();
-            });
-        } else {
-          return $.ajax(uri,
-                        {"headers":{"Accept":"text/turtle"}})
-            .then(function(data, status, jqxhr) {
-              // load the turtle description and process it
-              store.load("text/turtle", data, uri,
-                         loadEndpointCallback(uri, deferred, proxy));
-              return deferred.promise();
-            }, function(jqxhr, status, error) {
-              // endpoint does not return CORS permissions
-              if(jqxhr.state() == "rejected" && jqxhr.status == 0) {
-                return App.Endpoints
-                  .loadEndpointDescription(uri, deferred, true);
-              } else if(jqxhr.status == 404) {
-                // endpoint supports CORS but does not support endpoint
-                // descriptions
-                return $.ajax(uri,
-                              {"data":{"query":"describe <"+uri+">"},
-                               "headers":{"Accept":"text/turtle"}})
-                  .then(function(data) {
-                    store.load("text/turtle", data, uri,
-                               loadEndpointCallback(uri, deferred, proxy));
-                    return deferred.promise();
-                  }, function(jqxhr) {
-                    deferred.reject();
-                    return deferred.promise();
-                  });
-              } else {
-                // some unexpected scenario; reject
-                deferred.reject();
-                return deferred.promise();
-              }
-            });
-        }
+      loadEndpointDescription: function(uri, deferred) {
+        deferred = deferred || $.Deferred();
+        var endpoint = new Endpoint(uri);
+        endpoint.readDescription(deferred);
+        return deferred.promise();
       }
     };
   })(),
@@ -315,52 +179,108 @@ var App = {
         }
         $.ajax(uri,
           {"async": true,
-           "success": function(data, status, jqxhr) {
+           "success": function(data) {
              $(window).trigger("queryload", [uri, data]);
              deferred.resolveWith(window, [uri, data]);
-           }, "error": function(jqxhr, status, error) {
-             $(window).trigger("queryload_failed", [uri, error]);
-             deferred.rejectWith(window, [uri, error]);
+           }, "error": function(jqxhr) {
+             $(window).trigger("queryload_failed", [uri, jqxhr.statusText]);
+             deferred.rejectWith(window, [uri, jqxhr.statusText]);
            }});
         return deferred.promise();
       }
     };
   })(),
   ConceptList: (function() {
+    var ignoreNamespaces = [
+      RDF.NS,
+      RDFS.NS,
+      OWL.NS,
+      SP.NS,
+      XSD.NS,
+      SD.NS,
+      "http://www.openlinksw.com/schemas/virtrdf#"
+    ];
     var concepts = {
     };
     return {
-      loadConceptsFromEndpoint: function() {
+      getConcept: function(uri) {
+        return concepts[uri];
+      },
+      getConcepts: function() {
+        return concepts;
+      },
+      getConceptQuery: function(uri) {
+        return Query.templateForClass(concepts[uri].endpoints[0], uri);
+      },
+      loadConceptsFromEndpoint: function(endpoint) {
+        if ( typeof endpoint === "string" ) {
+          endpoint = App.Endpoints.getEndpoint(endpoint);
+        }
+        var deferred = $.Deferred();
+        App.QueryCache.getQueryFromURI("queries/describe-concepts.rq")
+          .then(function(success, query) {
+            if ( !success ) {
+              deferred.reject();
+              return;
+            }
+            endpoint.query(query)
+              .done(function(data) {
+                var bindings = data.results.bindings;
+                var newClasses =
+                  $.map(bindings, function(binding) {
+                    var isNew = false;
+                    try {
+                      var uri = binding.Concept.value;
+                      // not efficient, but it will do for now
+                      for(var i = 0; i < ignoreNamespaces.length; i++) {
+                        if ( uri.indexOf( ignoreNamespaces[i] ) === 0 ) {
+                          return undefined;
+                        }
+                      }
+                      var label = binding.Label ? bindings.Label.value : null;
+                      var comment = binding.Comment ? bindings.Comment.value :
+                        null;
+                      if ( !label ) {
+                        label = labelFromUri( uri );
+                      }
+                      if ( concepts[uri] === undefined ) {
+                        concepts[uri] = new Concept(uri);
+                        concepts[uri].label = label;
+                        isNew = uri;
+                      }
+                      if ( concepts[uri].comment === undefined &&
+                           comment !== undefined ) {
+                        concepts[uri].comment = comment;
+                      }
+                      if ( concepts[uri].endpoints === undefined ) {
+                        concepts[uri].endpoints = [];
+                      }
+                      concepts[uri].endpoints.push( endpoint.uri );
+                    } catch(e) {
+                      console.warn("Exception while processing concepts:" + e);
+                    }
+                    return isNew === false ? undefined : isNew;
+                  });
+                deferred.resolveWith( window, [ newClasses ] );
+              })
+              .fail(function(jqxhr) {
+                deferred.rejectWith(window, [ jqxhr.status,
+                                              jqxhr.statusText ]);
+              });
+          }, function(success, error) {
+            if( !proxy && typeof success === "object" && success.state &&
+                success.state() === "rejected" ) {
+              return App.ConceptList.
+                loadConceptsFromEndpoint( endpoint, proxy );
+            }
+            deferred.rejectWith(window, [ error ]);
+          });
+        return deferred.promise();
       }
     };
   })(),
   QueryList: (function() {
     var items = {};
-    var getProjectionInfo = function(endpoint, uri, graph, node) {
-      var spVarName = queries.rdf.createNamedNode(SP.varName);
-      var rdfsLabel = queries.rdf.createNamedNode(RDFS.label);
-      var rdfsComment = queries.rdf.createNamedNode(RDFS.comment);
-      var info = {};
-      if(node['nominalValue'] == undefined) {
-        info["uri"] = uri+";bn="+node.nominalValue;
-      } else {
-        info["uri"] = node.nominalValue;
-      }
-      info["endpoint"] = endpoint;
-      var triples = graph.match(node, spVarName, null).toArray();
-      if(triples.length > 0) {
-        info["name"] = triples[0].object.nominalValue;
-      }
-      triples = graph.match(node, rdfsLabel, null).toArray();
-      if(triples.length > 0) {
-        info["label"] = triples[0].object.nominalValue;
-      }
-      triples = graph.match(node, rdfsComment, null).toArray();
-      if(triples.length > 0) {
-        info["comment"] = triples[0].object.nominalValue;
-      }
-      return info;
-    };
     var updateItems = function( endpoint, queries, deferred ) {
       var query = "PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> "+
         "PREFIX sp: <http://spinrdf.org/sp#> SELECT ?uri ?label ?comment "+
@@ -373,10 +293,11 @@ var App = {
         }
         var queryUris = [];
         queries.graph(endpoint, function(success, graph) {
-          var spResults = queries.rdf.createNamedNode(SP.resultVariables);
-          var rdfFirst = queries.rdf.createNamedNode(RDF.first);
-          var rdfRest = queries.rdf.createNamedNode(RDF.rest);
-          $.each(solutions, function(i, solution) {
+          if ( !success ) {
+            deferred.reject();
+            return;
+          }
+          $.map(solutions, function(solution) {
             var uri = solution["uri"].value;
             var label = solution["label"].value;
             var comment = solution["comment"] ? solution["comment"].value
@@ -389,27 +310,11 @@ var App = {
             }
             items[uri] = query;
             queryUris.push(uri);
-            return;
-            var uriNode = queries.rdf.createNamedNode(uri);
-            var label = solution["label"].value;
-            var comment = solution["comment"] ? solution["comment"].value : null;
-            items[uri] = {"uri": uri, "label": label, "endpoint": endpoint};
-            if( comment ) { items[uri]["comment"] = comment; }
-            var projections = [];
-            var triples = graph.match(uriNode, spResults, null).toArray();
-            if( triples.length > 0 ) {
-              var vars = rdfListToArray(queries, graph, triples[0].object);
-              $.each(vars, function(j, v) {
-                projections.push(getProjectionInfo(endpoint, uri, graph, v));
-              });
-            }
-            items[uri].projections = projections;
-            queryUris.push(uri);
           });
         });
         deferred.resolveWith(window, [ endpoint, store, queryUris ]);
       });
-    }
+    };
     return {
       getQuery: function(uri) {
         return items[uri];
@@ -421,15 +326,19 @@ var App = {
         var deferred = $.Deferred();
         App.QueryCache.getQueryFromURI("queries/describe-spin.rq")
           .then(function(success, query) {
+            if ( !success ) {
+              deferred.reject();
+              return;
+            }
             var queryUri = [endpoint];
             queryUri[1] = /\?/.test( endpoint ) ? "&" : "?";
-            if ( proxy != undefined ) {
+            if ( proxy === true ) {
               queryUri = [ "http://logd.tw.rpi.edu/sparql" ];
               queryUri[1] = "?";
             }
             queryUri[2] = "query=";
             queryUri[3] = encodeURIComponent( query );
-            if ( proxy != undefined ) {
+            if ( proxy === true ) {
               queryUri[4] = "&service-uri=";
               queryUri[5] = encodeURIComponent( endpoint );
               queryUri[6] = "&output=xml";
@@ -447,10 +356,9 @@ var App = {
                             });
           }, function(success, error) {
             console.log("test");
-            if( !proxy && typeof success === "object" ) {
-              if ( success.state && success.state() == "rejected" ) {
-                return App.QueryList.loadQueriesFromEndpoint( endpoint, proxy );
-              }
+            if( !proxy && typeof success === "object" && success.state &&
+                success.state() === "rejected" ) {
+              return App.QueryList.loadQueriesFromEndpoint( endpoint, proxy );
             }
             deferred.rejectWith(window, [ error ]);
           });
@@ -504,14 +412,22 @@ var App = {
        */
       instantiate: function(uri) {
         // hash to get a reasonably small identifier. collision is unlikely.
+        var query = null;
+        if ( uri in App.ConceptList.getConcepts() ) {
+          var endpoint = App.ConceptList.getConcept( uri ).endpoints[0];
+          query = Query.templateForClass( endpoint, uri );
+          uri = query.uri;
+        } else {
+          query = App.QueryList.getQuery(uri).clone();
+        }
         var key = md5(uri);
-        if ( items[key] == undefined ) {
+        if ( items[key] === undefined ) {
           items[key] = [];
         }
         var queryId = key + "_" + items[key].length;
-        var query = App.QueryList.getQuery(uri).clone();
         query.queryId = queryId;
         items[key].push( query );
+        $(window).trigger("instantiated_query", [ queryId ]);
         return queryId;
       },
       /**
@@ -522,6 +438,11 @@ var App = {
        * @memberof App.QueryCanvas
        */
       destroy: function(queryId) {
+        var idx = queryId.lastIndexOf('_');
+        var key = queryId.substr(0, idx);
+        var i = parseInt(queryId.substr(idx+1));
+        items[key][i] = undefined;
+        $(window).trigger("removed_query", [ queryId ]);
       },
       /**
        * Reorders the projections of a query.
@@ -536,16 +457,18 @@ var App = {
        */
       reorderProjections: function(queryId, order) {
         var query = App.QueryCanvas.getQuery( queryId );
-        var map = $.map(order, function(x) { return query.getVariable(x); });
+        var map = $.map(order, function(x) {
+          return query.getVariable(x);
+        });
         var checker = {};
-        $.each(query.projections, function(i, v) {
+        $.map(query.projections, function(v) {
           checker[v.varName] = 1;
         });
-        $.each(map, function(i, v) {
+        $.map(map, function(v) {
           checker[v.varName]--;
         });
         for ( var key in checker ) {
-          if ( checker[key] != 0 ) {
+          if ( checker[key] !== 0 ) {
             throw "Variable name not in new ordering: " + key;
           }
         }
@@ -572,7 +495,7 @@ var App = {
         // create joined query
         var joinQuery = new Query.JoinedQuery(query1, query2);
         var newKey = md5( joinQuery.uri );
-        if ( items[newKey] == undefined ) {
+        if ( items[newKey] === undefined ) {
           items[newKey] = [];
         }
         var newQueryId = newKey + "_" + items[newKey].length;

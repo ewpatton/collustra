@@ -10,6 +10,12 @@
  * @file
  */
 
+/** Helper for when we want to use equals() on an object without checking the
+    type for string. **/
+String.prototype.equals = function(other) {
+  return this === other;
+};
+
 /** Stores the SPARQL endpoint descriptions **/
 var store = new rdfstore.Store({name:"rdfstore"},function(){});
 
@@ -32,14 +38,14 @@ var rdfListToArray = function(store, graph, head) {
   var result = [];
   var rdfFirst = store.rdf.createNamedNode(RDF.first);
   var rdfRest = store.rdf.createNamedNode(RDF.rest);
-  while ( head.nominalValue != RDF.nil ) {
+  while ( head.nominalValue !== RDF.nil ) {
     var triples = graph.match(head, rdfFirst, null).toArray();
     result.push(triples[0].object);
     triples = graph.match(head, rdfRest, null).toArray();
     head = triples[0].object;
   }
   return result;
-}
+};
 
 /**
  * @class
@@ -82,38 +88,88 @@ function Query(uri, type) {
 
 /**
  * Returns a projection (if a number) or a variable (if string)
+ * @param {string|number} varid String explicitly naming a variable or a
+ * non-negative integer identifying a specific projection in the SPARQL
+ * query.
+ * @return {Query.Variable} A variable object identified by the varid
+ * @throws {string} If varid does not identify a variable an exception is thrown
  */
 Query.prototype.getVariable = function(varid) {
-  if ( typeof varid == "string" ) {
+  if ( typeof varid === "string" ) {
     return this.variables[varid];
-  } else if ( typeof varid == "number" ) {
+  } else if ( typeof varid === "number" ) {
     return this.projections[varid];
   } else {
     throw "Unexpected varid '"+varid+"' in Query.getVariable";
   }
-}
+};
 
-Query.prototype.toString = function(opts) {
+/**
+ * Serializes the prefixes used in this query.
+ * @return {string} Serialization of the prefixes using the SPARQL
+ * notation.
+ */
+Query.prototype.serializePrefixes = function() {
   var result = "";
-  if ( this.type == QueryType.Select ) {
-    for( var prefix in PrefixHelper.namespaces ) {
+  for( var prefix in PrefixHelper.namespaces ) {
+    if ( PrefixHelper.namespaces.hasOwnProperty( prefix ) ) {
       result += "PREFIX " + prefix.toLowerCase() + ": <" +
         PrefixHelper.namespaces[prefix] + ">\n";
     }
+  }
+  return result;
+};
+
+/**
+ * Serializes the projections used in this query.
+ * @return {string} Serialization of the projections using SPARQL
+ * 1.1 notation.
+ */
+Query.prototype.serializeProjections = function() {
+  if ( this.projections.length === 0 ) {
+    return " *";
+  } else {
+    var result = "";
+    for ( var i = 0; i < this.projections.length; i++ ) {
+      result += " ";
+      result += this.projections[i].toString();
+    }
+    return result;
+  }
+};
+
+/**
+ * Serializes the where clause of the query.
+ * @return {string} Serialization of the where clause in the query,
+ * compacted using the semicolon and comma operators where possible
+ * based on the Turtle/SPARQL grammar.
+ * @see {BasicGraphPattern#toString}
+ */
+Query.prototype.serializeWhereClause = function() {
+  var result = " WHERE {\n";
+  for ( var i = 0; i < this.where.length; i++ ) {
+    result += this.where[i].toString( i ? this.where[i-1] : null );
+  }
+  return result + "\n}";
+};
+
+/**
+ * Converts the Query into a string containing a SPARQL serialization.
+ * @param {Object} [opts] Additional arguments that
+ * will override the set OFFSET/LIMIT values in the query object.
+ * @param {number} [opts.offset] Override internal offset for OFFSET
+ * clause with the specified value
+ * @param {number} [opts.limit] Override internal limit for LIMIT
+ * clause with the specified value
+ * @return {string} SPARQL string serializing this query.
+ */
+Query.prototype.toString = function(opts) {
+  var result = "";
+  if ( this.type === QueryType.Select ) {
+    result += this.serializePrefixes();
     result += "SELECT";
-    if ( this.projections.length == 0 ) {
-      result += " *";
-    } else {
-      for ( var i = 0; i < this.projections.length; i++ ) {
-        result += " ";
-        result += this.projections[i].toString();
-      }
-    }
-    result += " WHERE {\n";
-    for ( var i = 0; i < this.where.length; i++ ) {
-      result += this.where[i].toString( i ? this.where[i-1] : null );
-    }
-    result += "\n}";
+    result += this.serializeProjections();
+    result += this.serializeWhereClause();
     if ( this.order.length > 0 ) {
       result += " ORDER BY";
     }
@@ -150,6 +206,15 @@ var isVariable = function(store, graph, node) {
 };
 
 /**
+ * Converts an expression in SPIN RDF notation into an internal structure
+ * that can be manipulated in JavaScript.
+ * @param {rdfstore.Store} store An RDF Store used for creating named nodes.
+ * @param {rdfstore.Graph} graph An RDF Graph containing the SPIN description.
+ * @param {Query} query The Query object being created
+ * @param {rdfstore.Store.RDFNode} node A blank node representing the expression
+ * to be transformed.
+ * @return {Query.Expression|Query.Variable} An expression (if node is an
+ * arbitrary expression) or a variable if the node names a variable.
  * @todo support entire SPARQL expressions here...
  */
 var expressionToObject = function(store, graph, query, node) {
@@ -161,16 +226,16 @@ var expressionToObject = function(store, graph, query, node) {
 };
 
 /**
- * Processes a SELECT query from a SPIN description in RDF.
- * @memberof Query
- * @private
- * @param {rdfstore.Store} store
- * @param {rdfstore.Graph} graph
- * @param {Query} query
- * @todo not yet complete
+ * Processes SPIN description of projections into a Query object that can be
+ * manipulated easily in JavaScript.
+ * @param {rdfstore.Store} store An RDF Store used for creating named nodes.
+ * @param {rdfstore.Graph} graph An RDF Graph containing the SPIN description.
+ * @param {Query} query The Query object being created
+ * @param {rdfstore.Store.RDFNode} qnode The node representing the query in the
+ * SPIN graph.
+ * @todo support expressions beyond variables...
  */
-var processSelectQuery= function(store, graph, query) {
-  var qnode = store.rdf.createNamedNode(query.uri);
+var processProjections = function(store, graph, query, qnode) {
   var vars = graph.match(qnode, store.rdf.createNamedNode(SP.resultVariables))
     .toArray();
   if ( vars.length > 0 ) {
@@ -179,7 +244,7 @@ var processSelectQuery= function(store, graph, query) {
     for(var i=0; i<vars.length; i++) {
       var name = graph.match(vars[i], varName).toArray();
       var projection = new Query.Variable(vars[i].nominalValue,
-                                          name[0].object.nominalValue)
+                                          name[0].object.nominalValue);
       var rdfsLabel = queries.rdf.createNamedNode(RDFS.label);
       var rdfsComment = queries.rdf.createNamedNode(RDFS.comment);
       var label = graph.match(vars[i], rdfsLabel).toArray();
@@ -194,84 +259,132 @@ var processSelectQuery= function(store, graph, query) {
       query.projections.push(projection);
     }
   }
-  var where = graph.match(qnode, store.rdf.createNamedNode(SP.where)).toArray();
-  where = rdfListToArray(store, graph, where[0].object);
+};
+
+/**
+ * Processes SPIN description of a triple and converts it into a basic graph
+ * pattern object.
+ * @param {rdfstore.Store} store An RDF Store used for creating named nodes.
+ * @param {rdfstore.Graph} graph An RDF Graph containing the SPIN description.
+ * @param {Query} query The Query object being created
+ * @param {rdfstore.Store.RDFNode} triple The node representing a triple
+ * @return {Query.BasicGraphPattern} A basic graph pattern object that can be
+ * used in the where clause or as part of an expression, e.g. in a NOT EXISTS
+ * filter.
+ * @todo support expressions beyond variables...
+ */
+var processBasicGraphPattern = function(store, graph, query, triple) {
   var subj = store.rdf.createNamedNode(SP.subject);
   var pred = store.rdf.createNamedNode(SP.predicate);
   var obj = store.rdf.createNamedNode(SP.object);
+  var s = graph.match(triple, subj).toArray();
+  var svar = isVariable(store, graph, s[0].object);
+  var p = graph.match(triple, pred).toArray();
+  var pvar = isVariable(store, graph, p[0].object);
+  var o = graph.match(triple, obj).toArray();
+  var ovar = isVariable(store, graph, o[0].object);
+  if ( svar ) {
+    svar = new Query.Variable(s[0].object.nominalValue, svar);
+    if ( query.variables[svar.varName] === undefined ) {
+      query.variables[svar.varName] = svar;
+    } else {
+      svar = query.variables[svar.varName];
+    }
+  } else {
+    svar = new Query.Resource(s[0].object.nominalValue,
+                              s[0].object.interfaceName === "BlankNode");
+  }
+  if ( pvar ) {
+    pvar = new Query.Variable(p[0].object.nominalValue, pvar);
+    if ( query.variables[pvar.varName] === undefined ) {
+      query.variables[pvar.varName] = pvar;
+    } else {
+      pvar = query.variables[pvar.varName];
+    }
+  } else {
+    pvar = new Query.Resource(p[0].object.nominalValue,
+                              p[0].object.interfaceName === "BlankNode");
+  }
+  if ( ovar ) {
+    ovar = new Query.Variable(o[0].object.nominalValue, ovar);
+    if ( query.variables[ovar.varName] === undefined ) {
+      query.variables[ovar.varName] = ovar;
+    } else {
+      ovar = query.variables[ovar.varName];
+    }
+  } else {
+    if ( o[0].object.interfaceName === "Literal" ) {
+      var type = null;
+      if ( o[0].object.language ) {
+        type = { "lang": o[0].object.language };
+      } else if ( o[0].object.datatype ) {
+        type = { "datatype": o[0].object.datatype };
+      }
+      ovar = new Query.Literal(o[0].object.nominalValue, type);
+    } else {
+      ovar = new Query.Resource(o[0].object.nominalValue,
+                                o[0].object.interfaceName === "BlankNode");
+    }
+  }
+  return new Query.BasicGraphPattern(svar, pvar, ovar);
+
+};
+
+/**
+ * Processes the where clause of a SPIN query into an internal JavaScript
+ * representation that is easy to manipulate.
+ * @param {rdfstore.Store} store An RDF Store used for creating named nodes.
+ * @param {rdfstore.Graph} graph An RDF Graph containing the SPIN description.
+ * @param {Query} query The Query object being created
+ * @param {rdfstore.Store.RDFNode} qnode The node representing the query in the
+ * SPIN graph.
+ * @todo support expressions beyond variables...
+ */
+var processWhereClause = function(store, graph, query, qnode) {
+  var where = graph.match(qnode, store.rdf.createNamedNode(SP.where)).toArray();
+  where = rdfListToArray(store, graph, where[0].object);
+  var subj = store.rdf.createNamedNode(SP.subject);
   for(var i=0; i<where.length;i ++) {
     // TODO this block assumes that everything in the where clause is a triple
     // pattern, which is not necessarily true (e.g. OPTIONAL, FILTER, etc.)
     var triple = where[i];
     var s = graph.match(triple, subj).toArray();
-    if ( s.length > 0 ) {
-      var svar = isVariable(store, graph, s[0].object);
-      var p = graph.match(triple, pred).toArray();
-      var pvar = isVariable(store, graph, p[0].object);
-      var o = graph.match(triple, obj).toArray();
-      var ovar = isVariable(store, graph, o[0].object);
-      if ( svar ) {
-        svar = new Query.Variable(s[0].object.nominalValue, svar);
-        if ( query.variables[svar.varName] == undefined ) {
-          query.variables[svar.varName] = svar;
-        } else {
-          svar = query.variables[svar.varName];
-        }
-      } else {
-        svar = new Query.Resource(s[0].object.nominalValue,
-                                  s[0].object.interfaceName == "BlankNode");
-      }
-      if ( pvar ) {
-        pvar = new Query.Variable(p[0].object.nominalValue, pvar);
-        if ( query.variables[pvar.varName] == undefined ) {
-          query.variables[pvar.varName] = pvar;
-        } else {
-          pvar = query.variables[pvar.varName];
-        }
-      } else {
-        pvar = new Query.Resource(p[0].object.nominalValue,
-                                  p[0].object.interfaceName == "BlankNode");
-      }
-      if ( ovar ) {
-        ovar = new Query.Variable(o[0].object.nominalValue, ovar);
-        if ( query.variables[ovar.varName] == undefined ) {
-          query.variables[ovar.varName] = ovar;
-        } else {
-          ovar = query.variables[ovar.varName];
-        }
-      } else {
-        if ( o[0].object.interfaceName == "Literal" ) {
-          var type = null;
-          if ( o[0].object.language ) {
-            type = { "lang": o[0].object.language };
-          } else if ( o[0].object.datatype ) {
-            type = { "datatype": o[0].object.datatype };
-          }
-          ovar = new Query.Literal(o[0].object.nominalValue, type);
-        } else {
-          ovar = new Query.Resource(o[0].object.nominalValue,
-                                    o[0].object.interfaceName == "BlankNode");
-        }
-      }
-      query.where.push(new Query.BasicGraphPattern(svar, pvar, ovar));
+    if ( s.length === 0 ) {
+      continue;
+    } else {
+      var bgp = processBasicGraphPattern(store, graph, query, triple);
+      query.where.push(bgp);
     }
   }
+};
+
+/**
+ * Processes a SELECT query from a SPIN description in RDF.
+ * @memberof Query
+ * @private
+ * @param {rdfstore.Store} store
+ * @param {rdfstore.Graph} graph
+ * @param {Query} query
+ * @todo not yet complete
+ */
+var processSelectQuery = function(store, graph, query) {
+  var qnode = store.rdf.createNamedNode(query.uri);
+  processProjections(store, graph, query, qnode);
+  processWhereClause(store, graph, query, qnode);
   var ordering = graph.match(qnode, store.rdf.createNamedNode(SP.orderBy))
     .toArray();
   if ( ordering.length > 0 ) {
     ordering = rdfListToArray(store, graph, ordering[0].object);
     var rdfType = store.rdf.createNamedNode(RDF.type);
     var spExpression = store.rdf.createNamedNode(SP.expression);
-    $.each(ordering, function(i, order) {
+    $.map(ordering, function(order) {
       var triples = graph.match(order, rdfType).toArray();
       if ( triples.length > 0 ) {
-        if ( triples[0].object.nominalValue == SP.Asc ) {
-          triples = graph.match(order, spExpression).toArray();
-          var ex = expressionToObject( store, graph, query, triples[0].object );
+        var extriple = graph.match(order, spExpression).toArray();
+        var ex = expressionToObject( store, graph, query, extriple[0].object );
+        if ( triples[0].object.nominalValue === SP.Asc ) {
           query.order.push( new Query.OrderBy( Query.Order.ASC, ex ) );
-        } else if ( triples[0].object.nominalValue == SP.Desc ) {
-          triples = graph.match(order, spExpression).toArray();
-          var ex = expressionToObject( store, graph, query, triples[0].object );
+        } else if ( triples[0].object.nominalValue === SP.Desc ) {
           query.order.push( new Query.OrderBy( Query.Order.DESC, ex ) );
         } else {
           console.warn("Unexpected type while ordering: " +
@@ -296,26 +409,50 @@ Query.fromSPIN = function(store, graph, uri) {
   var qnode = store.rdf.createNamedNode(uri);
   var type = store.rdf.createNamedNode(RDF.type);
   var types = graph.match(qnode, type).toArray();
-  var queryType = null;
   var query = null;
   for(var i=0; i<types.length; i++) {
     var t = types[i].object;
-    if(t.nominalValue == SP.Query) continue;
-    if(t.nominalValue.indexOf(SP.NS) === 0) {
+    if(t.nominalValue.indexOf(SP.NS) === 0 &&
+       t.nominalValue !== SP.Query) {
       switch(t.nominalValue) {
       case SP.Select:
         query = new Query(uri, QueryType.Select);
         processSelectQuery(store, graph, query);
         break;
       default:
-        throw "Only accepts Select queries."
+        throw "Only accepts Select queries.";
       }
       break;
     }
   }
-  if(query == null) {
+  if(query === null) {
     throw "No query type found. Aborting.";
   }
+  return query;
+};
+
+/**
+ * Creates a basic Query that queries for instances of the given class URI.
+ * @param {string|Endpoint} endpoint A URI or Endpoint object identifying an
+ * endpoint.
+ * @param {string} uri The URI of a class named in the endpoint.
+ * @return {Query} A query that can be used to list instances in the endpoint
+ * that are members of the named class.
+ */
+Query.templateForClass = function(endpoint, uri) {
+  var concept = App.ConceptList.getConcept( uri );
+  if ( typeof endpoint === "string" ) {
+    endpoint = App.Endpoints.getEndpoint(endpoint);
+  }
+  var queryUri = URI("query"+md5(uri)+".spin#").absoluteTo(URI(endpoint.uri));
+  var query = new Query(queryUri.toString(), QueryType.Select);
+  var id = new Query.Variable(queryUri+"id", "id");
+  var rdfType = new Query.Resource(RDF.type);
+  var clsResource = new Query.Resource(uri);
+  query.label = concept.label;
+  query.endpoint = endpoint.uri;
+  query.projections.push(id);
+  query.where.push(new Query.BasicGraphPattern(id, rdfType, clsResource));
   return query;
 };
 
@@ -325,35 +462,72 @@ Query.fromSPIN = function(store, graph, uri) {
  * @class Variable
  * @memberof Query
  * @classdesc
- * Variable
+ * Constructs a new SPARQL variable identified by the given URI and with the
+ * name varName
+ * @param {string} uri A URI used to identify this variable when serialized in
+ * an RDF graph.
+ * @param {varName} varName The variable name, which must be compliant with the
+ * naming rules for SPARQL variables.
  */
 Query.Variable = function(uri, varName) {
   this.uri = uri;
   this.varName = varName;
-}
+};
 
+/**
+ * Prints the variable using the SPARQL variable production
+ * @example
+ * (new Query.Variable("uri")).toString()
+ *  => "?uri"
+ * @return {string} Variable string
+ */
 Query.Variable.prototype.toString = function() {
   return "?" + this.varName;
-}
+};
 
+/**
+ * Clones the variable.
+ * @return {Query.Variable} A new Query.Variable that is equal to, but not the
+ * same as, the original instance.
+ */
 Query.Variable.prototype.clone = function() {
   var copy = new Query.Variable(this.uri, this.varName);
   return copy;
-}
+};
 
+/**
+ * Checks whether the given object is equal to this variable.
+ * @param {object} other An object to check for equality
+ * @return {boolean}
+ */
 Query.Variable.prototype.equals = function(other) {
-  if ( other == null ) {
+  if ( other === null ) {
     return false;
   } else if ( !( other instanceof Query.Variable ) ) {
     return false;
-  } else if (other == this) {
+  } else if (other === this) {
     return true;
   }
-  return this.uri == other.uri && this.varName == other.varName;
-}
+  return this.uri === other.uri && this.varName === other.varName;
+};
 
-Query.Order = {"ASC": 1, "DESC": 0}
+/**
+ * @class
+ * @classdesc
+ * An enumerated class that is used to identify the ordering of a SPARQL ORDER
+ * BY clause.
+ * @memberof Query
+ */
+Query.Order = {"ASC": 1, "DESC": 0};
 
+/**
+ * @class OrderBy
+ * @classdesc
+ * Constructs a new SPARQL ordering using the given direction and an expression.
+ * @param {Query.Order} dir Direction of the ordering
+ * @param {Query.Expression|Query.Variable} ex An expression to order by.
+ * @memberof Query
+ */
 Query.OrderBy = function(dir, ex) {
   this.direction = dir;
   this.expression = ex;
@@ -361,7 +535,7 @@ Query.OrderBy = function(dir, ex) {
 
 Query.OrderBy.prototype.toString = function() {
   var result = null;
-  if ( this.direction == Query.Order.ASC ) {
+  if ( this.direction === Query.Order.ASC ) {
     result = "ASC(";
   } else {
     result = "DESC(";
@@ -369,12 +543,12 @@ Query.OrderBy.prototype.toString = function() {
   result += this.expression.toString();
   result += ")";
   return result;
-}
+};
 
 Query.OrderBy.prototype.clone = function() {
   var copy = new Query.OrderBy(this.direction, this.expression);
   return copy;
-}
+};
 
 Query.JoinedQueryType = {
   "Substitution": 0,
@@ -388,12 +562,13 @@ Query.JoinedVariable = function(query1, query2, type) {
   this.orgQuery = query1;
   this.joinedTo = query2;
   this.joinType = type || Query.JoinedQueryType.Substitution;
-}
+};
 
 Query.JoinedVariable.prototype = Object.create(Query.Variable.prototype);
+
 Query.JoinedVariable.prototype.toString = function() {
   return "?"+this.varName;
-}
+};
 
 /**
  * @class Resource
@@ -409,38 +584,38 @@ Query.JoinedVariable.prototype.toString = function() {
 Query.Resource = function(uri, isBnode) {
   this.uri = uri;
   this.bnode = isBnode;
-}
+};
 
 Query.Resource.prototype.toString = function(namespaces) {
   var curie = PrefixHelper.compact(this.uri, namespaces);
   return curie || "<" + this.uri + ">";
-}
+};
 
 Query.Resource.prototype.clone = function() {
   var copy = new Query.Resource(this.uri, this.bnode);
   return copy;
-}
+};
 
 Query.Resource.prototype.equals = function(other) {
-  if ( other == null ) {
+  if ( other === null ) {
     return false;
   } else if ( !( other instanceof Query.Resource ) ) {
     return false;
-  } else if ( this == other ) {
+  } else if ( this === other ) {
     return true;
   }
-  return this.uri == other.uri && this.bnode == other.bnode;
+  return this.uri === other.uri && this.bnode === other.bnode;
 };
 
 Query.GraphComponent = function() {
-}
+};
 
 Query.BasicGraphPattern = function(subj, pred, obj) {
   Query.GraphComponent.call(this);
   this.subject = subj;
   this.predicate = pred;
   this.object = obj;
-}
+};
 
 Query.BasicGraphPattern.prototype.toString = function(previous) {
   if(previous instanceof Query.BasicGraphPattern) {
@@ -448,25 +623,25 @@ Query.BasicGraphPattern.prototype.toString = function(previous) {
       if(previous.predicate.equals( this.predicate )) {
         return ", " + this.object.toString() + " ";
       } else {
-        return ";\n  " + (this.predicate.uri == RDF.type ? " a " :
+        return ";\n  " + (this.predicate.uri === RDF.type ? " a " :
                            this.predicate.toString()) +
           " " + this.object.toString() + " ";
       }
     } else {
       return ".\n" + this.subject.toString() + " " +
-        (this.predicate.uri == RDF.type ? " a " : this.predicate.toString()) +
+        (this.predicate.uri === RDF.type ? " a " : this.predicate.toString()) +
         " " + this.object.toString() + " ";
     }
   } else {
-    if(this.predicate.uri == RDF.type) {
+    if(this.predicate.uri === RDF.type) {
       return this.subject.toString() + " a " + this.object.toString() + " ";
     } else {
       return this.subject.toString() + " " +
         this.predicate.toString() + " " +
-        this.object.toString() + " "
+        this.object.toString() + " ";
     }
   }
-}
+};
 
 Query.BasicGraphPattern.prototype.clone = function() {
   var copy = new Query.BasicGraphPattern();
@@ -474,7 +649,7 @@ Query.BasicGraphPattern.prototype.clone = function() {
   copy.predicate = this.predicate;
   copy.object = this.object;
   return copy;
-}
+};
 
 var cloneArray = function(arr) {
   return $.map(arr, function(el) {
@@ -488,7 +663,7 @@ var cloneArray = function(arr) {
       return el;
     }
   });
-}
+};
 
 var cloneDict = function(obj) {
   var copy = {};
@@ -507,7 +682,7 @@ var cloneDict = function(obj) {
     }
   }
   return copy;
-}
+};
 
 Query.prototype.clone = function() {
   var copy = new Query();
@@ -518,7 +693,7 @@ Query.prototype.clone = function() {
   copy.order = cloneArray(this.order);
   copy.product = cloneArray(this.product);
   copy.deletes = cloneArray(this.deletes);
-  copy.target = this.target
+  copy.target = this.target;
   copy.variables = cloneDict(this.variables);
   if ( this.label ) {
     copy.label = this.label;
@@ -532,10 +707,11 @@ Query.prototype.clone = function() {
     copy.prefixes = {};
   }
   return copy;
-}
+};
 
 Query.JoinedQuery = function(query1, query2, type) {
   type = type || Query.JoinedQueryType.Substitution;
+  var copy;
   // this won't be a valid URI, but it is internal for now.
   this.uri = query1.query.uri + query2.query.type;
   this.type = query1.query.type;
@@ -546,23 +722,24 @@ Query.JoinedQuery = function(query1, query2, type) {
   this.joinVariable = new Query.JoinedVariable(query1, query2, type);
   map[query1.variable.varName] = this.joinVariable;
   map2[query2.variable.varName] = this.joinVariable;
-  for ( var i = 0; i < query1.query.projections.length; i++ ) {
+  var i;
+  for ( i = 0; i < query1.query.projections.length; i++ ) {
     if ( query1.variable.equals( query1.query.projections[i] ) ) {
       this.projections.push( this.joinVariable );
     } else {
-      var copy = query1.query.projections[i].clone();
+      copy = query1.query.projections[i].clone();
       map[copy.varName] = copy;
       this.projections.push( copy );
     }
   }
-  for ( var i = 0; i < query2.query.projections.length; i++ ) {
+  for ( i = 0; i < query2.query.projections.length; i++ ) {
     if ( query2.variable.equals( query2.query.projections[i] ) ) {
       // joining here, but it is already in this.projections so just continue
       continue;
     } else {
-      var copy = query2.query.projections[i].clone();
-      while ( map[copy.varName] != undefined ||
-              map2[copy.varName] != undefined ) {
+      copy = query2.query.projections[i].clone();
+      while ( map[copy.varName] !== undefined ||
+              map2[copy.varName] !== undefined ) {
         var idx = copy.varName.search(/[0-9]+$/);
         if ( idx >= 0 ) {
           var count = parseInt( copy.varName.substr( idx ) );
@@ -578,38 +755,38 @@ Query.JoinedQuery = function(query1, query2, type) {
   }
   this.where = [];
   this.order = [];
-  if ( type == Query.JoinedQueryType.Substitution ) {
+  if ( type === Query.JoinedQueryType.Substitution ) {
     // TODO this mechanism does not yet rename non-projected variables
-    for ( var i = 0; i < query1.query.where.length; i++ ) {
-      var copy = query1.query.where[i].clone();
+    for ( i = 0; i < query1.query.where.length; i++ ) {
+      copy = query1.query.where[i].clone();
       copy.subject = map[copy.subject.varName] || copy.subject;
       copy.predicate = map[copy.predicate.varName] || copy.predicate;
       copy.object = map[copy.object.varName] || copy.object;
       this.where.push( copy );
     }
-    for ( var i = 0; i < query2.query.where.length; i++ ) {
-      var copy = query2.query.where[i].clone();
+    for ( i = 0; i < query2.query.where.length; i++ ) {
+      copy = query2.query.where[i].clone();
       copy.subject = map2[copy.subject.varName] || copy.subject;
       copy.predicate = map2[copy.predicate.varName] || copy.predicate;
       copy.object = map2[copy.object.varName] || copy.object;
       this.where.push( copy );
     }
-    for ( var i = 0; i < query1.query.order.length; i++ ) {
-      var copy = query1.query.order[i].clone();
+    for ( i = 0; i < query1.query.order.length; i++ ) {
+      copy = query1.query.order[i].clone();
       if ( copy.expression instanceof Query.Variable ) {
         copy.expression = map[copy.expression.varName];
       }
-      if ( copy["expression"] == undefined ) {
+      if ( copy["expression"] === undefined ) {
         throw "Expected an order expression to be a projected variable";
       }
       this.order.push( copy );
     }
-    for ( var i = 0; i < query2.query.order.length; i++ ) {
-      var copy = query2.query.order[i].clone();
+    for ( i = 0; i < query2.query.order.length; i++ ) {
+      copy = query2.query.order[i].clone();
       if ( copy.expression instanceof Query.Variable ) {
         copy.expression = map2[copy.expression.varName];
       }
-      if ( copy["expression"] == undefined ) {
+      if ( copy["expression"] === undefined ) {
         throw "Expected an order expression to be a projected variable";
       }
       this.order.push( copy );
@@ -623,7 +800,7 @@ Query.JoinedQuery = function(query1, query2, type) {
   this.comment = query1.query.comment;
   // Will not work when joining a query with joined query, you'll get
   // something like [ endpoint3, [ endpoint1, endpoint2 ] ]
-  if ( query1.query.endpoint == query2.query.endpoint ) {
+  if ( query1.query.endpoint.equals( query2.query.endpoint ) ) {
     this.endpoint = query1.query.endpoint;
   } else {
     this.endpoint = [ query1.query.endpoint, query2.query.endpoint ];
@@ -631,3 +808,190 @@ Query.JoinedQuery = function(query1, query2, type) {
 };
 
 Query.JoinedQuery.prototype = new Query();
+
+/**
+ * @class
+ * @classdesc
+ * @constructor
+ * @param {string} uri URI of the SPARQL endpoint
+ */
+function Endpoint(uri) {
+  this.uri = uri;
+  this.label = "";
+  this.comment = "";
+  this.proxy = false;
+};
+
+Endpoint.prototype.query = function(query) {
+  var url = this.proxy ? "http://logd.tw.rpi.edu/sparql" : this.uri;
+  var data = {};
+  if ( this.proxy ) {
+    data["output"] = "sparqljson";
+    data["query-option"] = "text";
+    data["service-uri"] = this.uri;
+  }
+  var headers = {};
+  if ( typeof query === "string" ) {
+    data["query"] = query;
+    if ( /ask/i.test(query) || /select/i.test(query) ) {
+      headers = {"Accept": "application/sparql-results+json"};
+    } else if ( /construct/i.test(query) || /describe/i.test(query ) ) {
+      headers = {"Accept": "text/turtle"};
+    }
+  } else {
+    data["query"] = query.toString();
+    switch ( query.type ) {
+    case QueryType.Select:
+    case QueryType.Ask:
+      headers = {"Accept": "application/sparql-results+json"};
+      break;
+    case QueryType.Construct:
+    case QueryType.Describe:
+      headers = {"Accept": "text/turtle"};
+      break;
+    default:
+      break;
+    }
+  }
+  return $.ajax(url, {"data": data, "headers": headers});
+};
+
+(function() {
+
+var processResults = function(graph, deferred) {
+  deferred = deferred || $.Deferred();
+  var rdf = store.rdf;
+  var arr = graph.match(null, rdf.createNamedNode(SD.endpoint),
+                        rdf.createNamedNode(this.uri)).toArray();
+  var subj = this.uri;
+  if(arr.length > 0) {
+    subj = arr[0].subject.value || arr[0].subject.nominalValue;
+  }
+  var node = rdf.createNamedNode(subj);
+  arr = graph.match(node, rdf.createNamedNode(RDFS.label))
+    .toArray();
+  var label = "";
+  if(arr.length > 0) {
+    label = arr[0].object.value || arr[0].object.nominalValue;
+  }
+  var comment = "";
+  arr = graph.match(node, rdf.createNamedNode(RDFS.comment))
+    .toArray();
+  if(arr.length > 0) {
+    comment = arr[0].object.value || arr[0].object.nominalValue;
+  }
+  if ( label !== null && label !== "" ) {
+    this.label = label;
+    this.comment = comment;
+    App.Endpoints.addEndpoint(this, deferred);
+  } else {
+    // could not read endpoint and haven't tried to proxy
+    deferred.reject();
+  }
+  return deferred.promise();
+};
+
+Endpoint.prototype.readDescription = function(deferred) {
+  var self=this;
+  deferred = deferred || jQuery.Deferred();
+  var args = {
+    "query":"prefix sd: <http://www.w3.org/ns/sparql-service-description#> " +
+      "describe <" + this.uri + "> ?endpoint where { optional { "+
+      "?endpoint sd:endpoint <"+this.uri+"> }}"
+  };
+  if ( this.proxy ) {
+    args["service-uri"] = this.uri;
+    args["query-option"] = "text";
+    args["output"] = "rdfn3";
+  }
+  $.ajax(this.proxy ? "http://logd.tw.rpi.edu/sparql" : this.uri,
+         {"data": args, "headers": {"Accept": "text/turtle"}})
+    .fail(function(jqxhr) {
+      if ( jqxhr.state() === "rejected" && jqxhr.status === 0 ) {
+        // CORS rejection, attempt to proxy
+        self.proxy = true;
+        self.readDescription(deferred);
+      } else {
+        deferred.reject();
+      }
+    })
+    .done(function(data) {
+      store.load("text/turtle", data, self.uri,
+                 function(success) {
+                   if(!success) {
+                     throw "Unable to parse turtle model.";
+                   }
+                   store.graph(self.uri, function(found, graph) {
+                     if(!found) {
+                       throw "Unable to find endpoint graph in model.";
+                     }
+                     processResults.call(self, graph, deferred);
+                   });
+                 });
+    });
+  return deferred.promise();
+};
+})();
+
+/**
+ * Expands a string in camel case into a string with spaces
+ * by capitalizing the first character and placing a space before
+ * any uppercase character so long as it is preceeded by a non-uppercase
+ * character.
+ * @param {string} text String to convert
+ * @return {string} String with spaces inserted before capitalized letters
+ */
+function expandCamelCase(text) {
+  var arr = [];
+  for(var i=0 ;i<text.length; i++) {
+    if ( i === 0 && text[i] >= 'a' && text[i] <= 'z' ) {
+      arr[i] = (text[i]).toUpperCase();
+    } else if ( i > 0 && text[i] >= 'A' && text[i] <= 'Z' ) {
+      if( text[i-1] >= 'A' && text[i-1] <= 'Z' ) {
+        arr[i] = text[i];
+      } else {
+        arr[i] = " " + text[i];
+      }
+    } else {
+      arr[i] = text[i];
+    }
+  }
+  return arr.join('');
+}
+
+/**
+ * Uses the URI fragment or final element in the URI's path to generate a label
+ * for the URI in the event that a label is unavailable in the knowledge store.
+ * @example
+ * labelFromUri("http://www.w3.org/2002/07/owl#ObjectProperty")
+ *  => "Object Property"
+ * labelFromUri("http://xmlns.com/foaf/0.1/givenName")
+ *  => "Given Name"
+ * @param {string|Uri} uri A string or Uri object representing a URI
+ * @return {string} A string converted from camel case originating from the
+ * fragment (#) or final path part (/).
+ * @seealso #expandCamelCase
+ */
+function labelFromUri(uri) {
+  if ( typeof uri === "string" ) {
+    uri = new URI( uri );
+  }
+  if ( uri.fragment() === "" ) {
+    return expandCamelCase(uri.filename());
+  } else {
+    return expandCamelCase(uri.fragment());
+  }
+}
+
+/**
+ * @class Concept
+ * @classdesc
+ * Models a concept (class) in the semantic web
+ * @param {string} uri URI of the concept
+ */
+function Concept(uri) {
+  this.uri = uri;
+  this.label = undefined;
+  this.comment = undefined;
+  this.endpoints = [];
+}

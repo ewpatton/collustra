@@ -262,6 +262,7 @@ var View = {
             li = $("<li>");
             li.addClass("query-item ui-widget-content");
             li.attr("uri", uri);
+            li.attr("type","query");
             li.text(queries[uri].label);
             if(queries[uri]["comment"] != undefined) {
               li.attr("comment", queries[uri].comment);
@@ -273,6 +274,77 @@ var View = {
       }
     };
     // end QueryList
+  })(),
+  /**
+   * @class
+   * @classdesc
+   * The ConceptList view provides draggable elements representing classes
+   * declared in one or more dropped endpoints that can be used to instantiate
+   * queries for instances of the class named by the draggable.
+   * @memberof View
+   */
+  ConceptList: (function() {
+    /**
+     * Generates a draggable helper to represent a query dragged from the query
+     * list to the query canvas.
+     * @returns {jQuery} A jQuery object wrapping a &lt;div&gt; element.
+     * @memberof View.QueryList
+     * @private
+     */
+    var helper = function() {
+      var self = $(this);
+      var elem = $("<div>");
+      elem.append("<span>");
+      elem.find("span").attr("comment",self.attr("comment")).text(self.text());
+      return elem;
+    };
+
+    /**
+     * Helper function to handle the selection mechanism.
+     * @param {jQuery.Event} event A jQuery event representing a mouse event
+     * @param {object} ui A jQueryUI event object
+     * @memberof View.QueryList
+     * @private
+     */
+    var doSelect = function(event, ui) {
+      if ( $(this).hasClass("ui-selected") ) $(this).removeClass("ui-selected");
+    }
+
+    /**
+     * Options passed to $.draggable in the query list
+     * @memberof View.QueryList
+     * @private
+     */
+    var dragOpts ={"appendTo":"body","helper":helper,"start":doSelect,
+                   "revert":"invalid"};
+
+    return {
+      init: function() {
+        $(window).bind("new_endpoint", function(event, uri) {
+          App.ConceptList.loadConceptsFromEndpoint( uri )
+            .then(View.ConceptList.refresh, View.showError);
+        });
+      },
+      refresh: function() {
+        var concepts = App.ConceptList.getConcepts();
+        var ul = $("#query-list #concepts ul");
+        for(var uri in concepts) {
+          var li = ul.find("li[uri='"+uri+"']");
+          if(li.length == 0) {
+            li = $("<li>");
+            li.addClass("query-item ui-widget-content");
+            li.attr("uri", uri);
+            li.attr("type","concept");
+            li.text(concepts[uri].label);
+            if(concepts[uri]["comment"] !== undefined) {
+              li.attr("comment", concepts[uri].comment);
+            }
+            li.appendTo(ul);
+            li.draggable(dragOpts);
+          }
+        }
+      }
+    };
   })(),
   /**
    * @class
@@ -326,15 +398,16 @@ var View = {
       query.append(div);
       div.addClass("vars");
       var uri = ui.draggable.attr("uri");
-      var queryInfo = App.QueryList.getQueries()[uri];
-      $.each(queryInfo.projections,
-             function(i, value) {
-               var span = $("<div>");
-               div.append(span);
-               span.text(value["varName"]);
-               span.tooltip({"show":{delay:"1000"},"items":"*",
-                             "content":value["comment"]});
-             });
+      var queryInfo = App.QueryList.getQueries()[uri] ||
+        App.ConceptList.getConceptQuery(uri);
+      $.map(queryInfo.projections,
+            function(value) {
+              var span = $("<div>");
+              div.append(span);
+              span.text(value["varName"]);
+              span.tooltip({"show":{delay:"1000"},"items":"*",
+                            "content":value["comment"]});
+            });
       var queryId = App.QueryCanvas.instantiate(uri);
       div.attr("queryId", queryId);
       $(window).trigger("dropped_query", [queryId]);
@@ -387,7 +460,7 @@ var View = {
      */
     var excludeJoinFrom = function(div) {
       return function(el) {
-        if(el[0].tagName != "TH") return false;
+        if(el[0].tagName !== "TH") return false;
         var p1 = el.parentsUntil(div);
         return p1[p1.length-1].tagName == "HTML";
       };
@@ -565,7 +638,7 @@ var View = {
         th.text(name);
         th.appendTo(tr);
       });
-      $.each(results.bindings, function(i, binding) {
+      $.map(results.bindings, function(binding) {
         tr = $("<tr>");
         tr.appendTo(table);
         var col = 0;
@@ -576,23 +649,23 @@ var View = {
           while( col < lookup[key] ) col++;
           var td = $("<td>");
           td.appendTo( tr );
-          if( value.type=="uri" ) {
-            td.html( '&lt;<a href="'+value.value+'" target="_new">' +
+          if( value.type === "uri" ) {
+            td.html( '&lt;<a href="' + value.value + '" target="_new">' +
                      value.value + '</a>&gt;');
-          } else if( value.type=="literal" ) {
-            if( value.datatype == undefined &&
-                value["xml:lang"] == undefined ) {
+          } else if( value.type === "literal" ) {
+            if( value.datatype === undefined &&
+                value["xml:lang"] === undefined ) {
               td.text( '"' + value.value + '"');
-            } else if( value.datatype == XSD.Decimal ||
-                       value.datatype == XSD.Integer ||
-                       value.datatype == XSD.Int ||
-                       value.datatype == XSD.Short ||
-                       value.datatype == XSD.Float ||
-                       value.datatype == XSD.Double ) {
+            } else if( value.datatype === XSD.Decimal ||
+                       value.datatype === XSD.Integer ||
+                       value.datatype === XSD.Int ||
+                       value.datatype === XSD.Short ||
+                       value.datatype === XSD.Float ||
+                       value.datatype === XSD.Double ) {
               td.text( value.value );
-            } else if( value.datatype != undefined ) {
+            } else if( value.datatype !== undefined ) {
               td.text( '"' + value.value + '"^^<' + value.datatype + '>' );
-            } else if( value["xml:lang"] != undefined ) {
+            } else if( value["xml:lang"] !== undefined ) {
               td.text( '"' + value.value + '"@' + value["xml:lang"] );
             } else {
               // should be covered by first if(); being conservative
@@ -822,6 +895,7 @@ var View = {
 
     View.Endpoints.init();
     View.QueryList.init();
+    View.ConceptList.init();
     View.Canvas.init();
     View.QueryResults.init();
     $("#error-dialog").dialog(

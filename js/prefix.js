@@ -16,31 +16,36 @@ var PrefixHelper = {
   reverseMap: function(map) {
     var result = {};
     for(var ns in map) {
-      result[map[ns]] = ns;
+      if(map.hasOwnProperty(ns)) {
+        result[map[ns]] = ns;
+      }
     }
     return result;
   },
   lookupUrl: function(url) {
     var deferred = $.Deferred();
-    if(/#$/.test(url) || /\/$/.test(url)) {
-      // do nothing
-    } else if(/#/.test(url)) {
-      var index = url.indexOf("#");
-      url = url.substring(0, index+1);
-    } else if(/\//.test(url)) {
-      var index = url.lastIndexOf("/");
-      url = url.substring(0, index+1);
-    } else {
-      throw "Unexpected URL of the form "+url;
+    if(!/#$/.test(url) && !/\/$/.test(url)) {
+      var index = null;
+      if(/#/.test(url)) {
+        index = url.indexOf("#");
+        url = url.substring(0, index+1);
+      } else if(/\//.test(url)) {
+        index = url.lastIndexOf("/");
+        url = url.substring(0, index+1);
+      } else {
+        throw "Unexpected URL of the form "+url;
+      }
     }
     if(url in PrefixHelper.reverse_namespaces) {
       deferred.resolveWith(window, [ PrefixHelper.reverse_namespaces[url] ]);
     } else {
       $.ajax("http://prefix.cc/reverse", {"dataType":"json","data":{"uri":url,"format":"json"}})
         .then(function(response) {
-          for(prefix in response) {
-            PrefixHelper.namespaces[prefix.toUpperCase()] = response[prefix];
-            PrefixHelper.reverse_namespaces[response[prefix]] = prefix.toUpperCase();
+          for(var prefix in response) {
+            if(response.hasOwnProperty(prefix)) {
+              PrefixHelper.namespaces[prefix.toUpperCase()] = response[prefix];
+              PrefixHelper.reverse_namespaces[response[prefix]] = prefix.toUpperCase();
+            }
           }
           deferred.resolveWith(window, [ prefix.toUpperCase(), response[prefix] ]);
         },function() {
@@ -55,15 +60,16 @@ var PrefixHelper = {
     } else {
       namespaces = PrefixHelper.reverseMap(namespaces);
     }
+    var idx, base;
     if(/#/.test(uri)) {
-      var idx = uri.indexOf("#")+1;
-      var base = uri.substring(0, idx);
+      idx = uri.indexOf("#")+1;
+      base = uri.substring(0, idx);
       if(base in namespaces) {
         return namespaces[base].toLowerCase() + ":" + uri.substring(idx);
       }
     } else {
-      var idx = uri.lastIndexOf("/")+1;
-      var base = uri.substring(0, idx);
+      idx = uri.lastIndexOf("/")+1;
+      base = uri.substring(0, idx);
       if(base in namespaces) {
         return namespaces[base].toLowerCase() + ":" + uri.substring(idx);
       }
