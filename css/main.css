@@ -12,6 +12,14 @@ html, body { height: 100%; }
 
 #query-list div.ui-tabs-panel {
     padding: 0.5em 0.7em;
+    overflow: scroll;
+    padding-bottom: 2.2em;
+    box-sizing: border-box;
+    height: 100%;
+}
+
+#results-raw-sparql pre {
+    padding: 1em;
 }
 
 .ui-layout-center { background: #FFE; display: block; width: 100px; height: 100px;}
@@ -95,6 +103,7 @@ div.vars > div {
     padding: 4pt;
     padding-right: 0;
     position: relative;
+    cursor: pointer;
 }
 
 div.vars > div ul {
@@ -105,6 +114,22 @@ div.vars > div ul {
     border: 1px solid black;
     display: none;
     position: absolute;
+    width: 10em;
+    font-size: 11pt;
+    z-index: 1000;
+}
+
+div.vars > div ul li:hover {
+    font-style: italic;
+}
+
+div.vars > div ul li {
+    padding: 4px;
+}
+
+div.vars > div ul li em {
+    font-style: italic;
+    color: #888;
 }
 
 div.vars > div:hover ul {

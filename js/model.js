@@ -84,6 +84,23 @@ function Query(uri, type) {
   this.deletes = [];
   this.target = null;
   this.variables = {};
+  this.endpoints = {};
+  this.activeEndpoint = null;
+}
+
+Query.prototype.getActiveEndpoint = function() {
+  return this.endpoints[this.activeEndpoint];
+}
+
+Query.prototype.getEndpoints = function() {
+  return this.endpoints;
+}
+
+Query.prototype.addEndpoint = function(endpoint) {
+  this.endpoints[endpoint.uri] = endpoint;
+  if ( this.activeEndpoint === null ) {
+    this.activeEndpoint = endpoint.uri;
+  }
 }
 
 /**
@@ -111,10 +128,39 @@ Query.prototype.getVariable = function(varid) {
  */
 Query.prototype.serializePrefixes = function() {
   var result = "";
+  /*
   for( var prefix in PrefixHelper.namespaces ) {
     if ( PrefixHelper.namespaces.hasOwnProperty( prefix ) ) {
       result += "PREFIX " + prefix.toLowerCase() + ": <" +
         PrefixHelper.namespaces[prefix] + ">\n";
+    }
+  }
+  */
+  var prefixes = {};
+  $.map(this.where, function(bgp) {
+    var curie;
+    if(bgp.subject instanceof Query.Resource) {
+      curie = PrefixHelper.curieObject(bgp.subject.uri);
+      if( !(curie.prefix in prefixes) ) {
+        prefixes[curie.prefix] = curie.prefixUri;
+      }
+    }
+    if(bgp.predicate instanceof Query.Resource) {
+      curie = PrefixHelper.curieObject(bgp.predicate.uri);
+      if( !(curie.prefix in prefixes) ) {
+        prefixes[curie.prefix] = curie.prefixUri;
+      }
+    }
+    if(bgp.object instanceof Query.Resource) {
+      curie = PrefixHelper.curieObject(bgp.object.uri);
+      if( !(curie.prefix in prefixes) ) {
+        prefixes[curie.prefix] = curie.prefixUri;
+      }
+    }
+  });
+  for(var prefix in prefixes) {
+    if(prefixes.hasOwnProperty(prefix)) {
+      result += "PREFIX " + prefix + ": <" + prefixes[prefix] + ">\n";
     }
   }
   return result;
@@ -144,13 +190,23 @@ Query.prototype.serializeProjections = function() {
  * compacted using the semicolon and comma operators where possible
  * based on the Turtle/SPARQL grammar.
  * @see {BasicGraphPattern#toString}
+ * @param {boolean} [wrap=true] Wrap the where block with WHERE { ... }
+ * @return {string} A where clause in the SPARQL serialization
  */
-Query.prototype.serializeWhereClause = function() {
-  var result = " WHERE {\n";
+Query.prototype.serializeWhereClause = function(wrap) {
+  wrap = wrap === undefined ? true : wrap;
+  var result = "";
+  if ( wrap === true ) {
+    result = " WHERE {\n";
+  }
   for ( var i = 0; i < this.where.length; i++ ) {
     result += this.where[i].toString( i ? this.where[i-1] : null );
   }
-  return result + "\n}";
+  if ( wrap === true ) {
+    return result + "\n}";
+  } else {
+    return result;
+  }
 };
 
 /**
@@ -184,6 +240,34 @@ Query.prototype.toString = function(opts) {
     }
   }
   return result;
+};
+
+/**
+ * Applies this query as a substitution into the given query template.
+ * @param {string} template Query template to apply
+ * @param {Object} substitutions Additional substitutions for the template.
+ * @return {string} A query string serializing the template applied with the
+ * contents of this query.
+ */
+Query.prototype.applyToTemplate = function(template, substitutions) {
+  if ( template.indexOf("#@QUERY_PREFIXES@#") !== -1 ) {
+    template = template.replace(/#@QUERY_PREFIXES@#/gi,
+                                this.serializePrefixes());
+  }
+  if ( template.indexOf("#@QUERY_WHERE@#") !== -1 ) {
+    template = template.replace(/#@QUERY_WHERE@#/gi,
+                                this.serializeWhereClause(false)+" .");
+  }
+  for ( var name in substitutions ) {
+    if ( substitutions.hasOwnProperty(name) &&
+         template.indexOf( "#@" + name + "@#" ) !== -1 ) {
+      console.log("substituting '#@" + name + "@#' with " +
+                  substitutions[name].toString());
+      template = template.replace( new RegExp("#@" + name + "@#", "gi"),
+                                   substitutions[name].toString() );
+    }
+  }
+  return template;
 };
 
 (function() {
@@ -445,13 +529,14 @@ Query.templateForClass = function(endpoint, uri) {
     endpoint = App.Endpoints.getEndpoint(endpoint);
   }
   var queryUri = URI("query"+md5(uri)+".spin#").absoluteTo(URI(endpoint.uri));
-  var query = new Query(queryUri.toString(), QueryType.Select);
-  var id = new Query.Variable(queryUri+"id", "id");
+  var query = new Query(queryUri.toString()+"#", QueryType.Select);
+  var id = new Query.Variable(queryUri+"#id", "id");
   var rdfType = new Query.Resource(RDF.type);
   var clsResource = new Query.Resource(uri);
   query.label = concept.label;
-  query.endpoint = endpoint.uri;
+  query.addEndpoint(endpoint);
   query.projections.push(id);
+  query.variables[id.varName] = id;
   query.where.push(new Query.BasicGraphPattern(id, rdfType, clsResource));
   return query;
 };
@@ -698,9 +783,8 @@ Query.prototype.clone = function() {
   if ( this.label ) {
     copy.label = this.label;
   }
-  if ( this.endpoint ) {
-    copy.endpoint = this.endpoint;
-  }
+  copy.endpoints = cloneArray(this.endpoints);
+  copy.activeEndpoint = this.activeEndpoint;
   if ( this.prefixes ) {
     copy.prefixes = cloneDict( this.prefixes );
   } else {
@@ -798,13 +882,19 @@ Query.JoinedQuery = function(query1, query2, type) {
   this.variables = $.extend({}, map, map2);
   this.label = query1.query.label + " joined with " + query2.query.label;
   this.comment = query1.query.comment;
+  this.endpoints = {};
+  this.activeEndpoint = null;
   // Will not work when joining a query with joined query, you'll get
   // something like [ endpoint3, [ endpoint1, endpoint2 ] ]
-  if ( query1.query.endpoint.equals( query2.query.endpoint ) ) {
-    this.endpoint = query1.query.endpoint;
+  var e1 = query1.query.getActiveEndpoint();
+  var e2 = query2.query.getActiveEndpoint();
+  if ( e1.equals(e2) ) {
+    this.endpoints[e1.uri] = e1;
   } else {
-    this.endpoint = [ query1.query.endpoint, query2.query.endpoint ];
+    this.endpoints[e1.uri] = e1;
+    this.endpoints[e2.uri] = e2;
   }
+  this.activeEndpoint = e1.uri;
 };
 
 Query.JoinedQuery.prototype = new Query();
@@ -822,6 +912,26 @@ function Endpoint(uri) {
   this.proxy = false;
 };
 
+/**
+ * Compares two endpoints for equality.
+ * @param {*} other An object to test for equality.
+ * @return {boolean} true if the two endpoints are equal, otherwise
+ * false. If other is not an instance of Endpoint, this will return
+ * false.
+ */
+Endpoint.prototype.equals = function(other) {
+  if ( this === other ) {
+    return true;
+  } else if ( other === null ) {
+    return false;
+  } else if ( typeof this === typeof other ) {
+    return false;
+  }
+  if ( this.uri === other.uri ) {
+    return true;
+  }
+};
+
 Endpoint.prototype.query = function(query) {
   var url = this.proxy ? "http://logd.tw.rpi.edu/sparql" : this.uri;
   var data = {};
@@ -829,6 +939,8 @@ Endpoint.prototype.query = function(query) {
     data["output"] = "sparqljson";
     data["query-option"] = "text";
     data["service-uri"] = this.uri;
+  } else {
+    data["timeout"] = 5000;
   }
   var headers = {};
   if ( typeof query === "string" ) {
@@ -952,6 +1064,8 @@ function expandCamelCase(text) {
       } else {
         arr[i] = " " + text[i];
       }
+    } else if ( text[i] == '_' ) {
+      arr[i] = ' ';
     } else {
       arr[i] = text[i];
     }

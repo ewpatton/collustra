@@ -56,3 +56,6 @@ $(document).ready(function() {
   App.init();
   View.init();
 });
+
+// for development only
+$.ajaxSetup({"cache":false});

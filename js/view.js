@@ -122,7 +122,10 @@ var View = {
               $( "#endpoints option.default" ).remove();
               $( this ).dialog( "close" );
               if ( create ) {
-                App.Endpoints.addEndpoint(newUri, newLabel, newComment);
+                var endpoint = new Endpoint(newUri);
+                endpoint.label = newLabel;
+                endpoint.comment = newComment;
+                App.Endpoints.addEndpoint( endpoint );
               } else {
                 App.Endpoints.updateEndpoint(endpointDialogURI, newUri,
                                              newLabel, newComment);
@@ -327,22 +330,36 @@ var View = {
       },
       refresh: function() {
         var concepts = App.ConceptList.getConcepts();
-        var ul = $("#query-list #concepts ul");
+        var sorted = [];
         for(var uri in concepts) {
-          var li = ul.find("li[uri='"+uri+"']");
+          if ( concepts.hasOwnProperty( uri ) ) {
+            sorted.push(concepts[uri])
+          }
+        }
+        sorted.sort(function(a, b) {
+          return a.label < b.label ? -1 : a.label > b.label ? 1 : 0;
+        });
+        var ul = $("#query-list #concepts ul");
+        $.map(sorted, function(concept) {
+          var li = ul.find("li[uri='"+concept.uri+"']");
           if(li.length == 0) {
             li = $("<li>");
             li.addClass("query-item ui-widget-content");
-            li.attr("uri", uri);
+            li.attr("uri", concept.uri);
             li.attr("type","concept");
-            li.text(concepts[uri].label);
-            if(concepts[uri]["comment"] !== undefined) {
-              li.attr("comment", concepts[uri].comment);
+            var curie = PrefixHelper.curieObject(concept.uri);
+            var label = concept.label;
+            if ( curie.prefix !== null ) {
+              label += " ("+curie.prefix+")";
+            }
+            li.text(label);
+            if(concept["comment"] !== undefined) {
+              li.attr("comment", concept.comment);
             }
             li.appendTo(ul);
             li.draggable(dragOpts);
           }
-        }
+        });
       }
     };
   })(),
@@ -404,9 +421,11 @@ var View = {
             function(value) {
               var span = $("<div>");
               div.append(span);
+              span.attr("varName", value["varName"]);
               span.text(value["varName"]);
               span.tooltip({"show":{delay:"1000"},"items":"*",
                             "content":value["comment"]});
+              span.click(View.Canvas.showLinkages);
             });
       var queryId = App.QueryCanvas.instantiate(uri);
       div.attr("queryId", queryId);
@@ -424,6 +443,115 @@ var View = {
            hoverClass: "drop-now", drop: drop,
            over: animateDragOver, out: animateDragOut
           });
+        $(window).bind("projection_added", function(e, queryId, variable) {
+          var div = $("div[queryId='"+queryId+"']");
+          var proj = $("<div>");
+          div.append(proj);
+          proj.attr("varName", variable.varName);
+          proj.text(variable.varName);
+          if ( variable.comment !== undefined ) {
+            proj.tooltip({"show":{delay:"1000"},"items":"*",
+                          "content":variable.comment});
+          }
+          proj.click(View.Canvas.showLinkages);
+        });
+        $(window).bind("projection_removed", function(e, queryId, variable) {
+          $("div[queryId='"+queryId+"'] div[varName='"+variable.varName+"']")
+            .remove();
+        });
+        $(window).bind("updated_query", function(e, oldId, newId) {
+          var div = $("div[queryId='"+oldId+"']");
+          div.find("ul").remove();
+          if ( newId !== undefined && newId !== oldId ) {
+            div.attr("queryId", newId);
+            // TODO other stuff here, e.g. update projections
+            div.empty();
+            var queryInfo = App.QueryCanvas.getQuery(newId);
+            $.map(queryInfo.projections,
+                  function(value) {
+                    var span = $("<div>");
+                    div.append(span);
+                    span.attr("varName", value["varName"]);
+                    span.text(value["varName"]);
+                    span.tooltip({"show":{delay:"1000"},"items":"*",
+                                  "content":value["comment"]});
+                    span.click(View.Canvas.showLinkages);
+                  });
+          }
+        });
+        $(window).bind("removed_query", function(e, oldId) {
+          var div = $("div[queryId='"+oldId+"']").parent();
+          div.remove();
+        });
+      },
+      showLinkages: function(event) {
+        var el = $(event.target);
+        var queryId = el.parent().attr("queryId");
+        var query = App.QueryCanvas.getQuery(queryId);
+        var variable = query.getVariable( el.contents()[0].nodeValue );
+        var endpoint = query.getActiveEndpoint();
+        if ( typeof endpoint === "string" ) {
+          endpoint = App.Endpoints.getEndpoint(endpoint);
+        }
+        App.QueryCache
+          .getQueryTemplateFromURI("queries/describe-properties.rqt")
+          .then(function(uri, template) {
+            var substitution = {"VARIABLE": variable};
+            template = query.applyToTemplate(template, substitution);
+            return endpoint.query(template);
+          })
+          .done(function(data) {
+            var ul = $("<ul>");
+            ul.appendTo(el);
+            var bindings = data.results.bindings;
+            if ( bindings.length === 0 ) {
+              var li = $("<li>");
+              li.appendTo(ul);
+              li.html("<em>No properties found</em>");
+            } else {
+              $.map(bindings, function(binding) {
+                var uri = binding.Property.value;
+                var label = binding.Label === undefined ?
+                  labelFromUri(uri) : binding.Label.value;
+                var comment = binding.Comment === undefined ?
+                  "" : binding.Comment.value;
+                var occurrences = binding.Occurrences.value;
+                var li = $("<li>");
+                li.attr("uri", uri);
+                li.attr("label", label);
+                var curie = PrefixHelper.curieObject(uri);
+                if ( curie.prefix !== null ) {
+                  label = label + " (" + curie.prefix + ")";
+                }
+                label += " [" + occurrences + "]";
+                li.text(label);
+                if ( comment !== "" ) {
+                  li.attr("comment", comment);
+                }
+                li.appendTo(ul);
+              });
+              ul.find("li").click(function(event2) {
+                event2.stopImmediatePropagation();
+                var li = $(event2.target);
+                var uri = li.attr("uri");
+                console.log(uri);
+                var label = li.attr("label");
+                if ( label.indexOf("Has ") === 0 ) {
+                  label = label.replace("Has ","");
+                } else if ( label.indexOf("Is ") === 0 ) {
+                  label = label.replace("Is ", "");
+                }
+                label = label.replace(/ /g, "_");
+                label = label.toLowerCase();
+                console.log(label);
+                var newVar = App.QueryCanvas.addVariable(queryId, label);
+                App.QueryCanvas.project(queryId, newVar);
+                App.QueryCanvas.addWhereClause(queryId, variable, uri, newVar);
+                return false;
+              });
+            }
+          })
+          .fail(View.showError);
       }
     };
   })(),
@@ -595,7 +723,9 @@ var View = {
                cells[i-1].insertBefore(trs.eq(i).children().eq(dropIndex));
              }
            }
-           var variables = th.parent().find("th").map(function(i, el) { return $(el).text(); });
+           var variables = th.parent().find("th").map(function(i, el) {
+             return $(el).text();
+           });
            var group = th.parents("div.group");
            var table = group.find("table");
            App.QueryCanvas.reorderProjections(table.attr("queryId"), variables);
@@ -768,14 +898,33 @@ var View = {
         });
         $(window).bind("removed_query", function(event, queryId) {
           View.QueryResults.removeQueryResults( queryId );
+          $("pre[queryId='"+queryId+"']").remove();
         });
         $(window).bind("updated_query", function(event, oldId, newId) {
-          if ( newId != undefined && oldId != newId ) {
+          if ( newId !== undefined && oldId !== newId ) {
             View.QueryResults.removeQueryResults( oldId );
             View.QueryResults.addQueryResults( newId );
+            var queryInfo = App.QueryCanvas.getQuery(newId);
+            var p = $("pre[queryId='"+oldId+"']");
+            p.text("# " + queryInfo.label + queryInfo.toString());
+            p.attr("queryId", newId);
           } else {
             // TODO some update mechanism here...
+            // suboptimal workaround
+            View.QueryResults.removeQueryResults( oldId );
+            View.QueryResults.addQueryResults( oldId );
+            var queryInfo = App.QueryCanvas.getQuery(oldId);
+            $("pre[queryId='"+oldId+"']")
+              .text("# " + queryInfo.label + "\n" + queryInfo.toString());
           }
+        });
+        $(window).bind("instantiated_query", function(e, queryId) {
+          var div = $("#results-raw-sparql")
+          var queryInfo = App.QueryCanvas.getQuery(queryId);
+          var p = $("<pre>");
+          p.text("# " + queryInfo.label + "\n" + queryInfo.toString());
+          p.attr("queryId", queryId);
+          div.append(p);
         });
       },
       /**
@@ -788,7 +937,7 @@ var View = {
       addQueryResults: function(queryId) {
         $("#query-results .spinner").css("display","block");
         var queryInfo = App.QueryCanvas.getQuery(queryId);
-        var endpoint = queryInfo.endpoint;
+        var endpoint = queryInfo.getActiveEndpoint().uri;
         var graph = null;
         queries.graph(endpoint, function(success, g) {
           graph = g;
@@ -797,7 +946,7 @@ var View = {
         $.ajax(endpoint,
                {"data":{"output":"json","query":sparql},
                 "ajax":true,
-                "accepts":{"json":"application/sparql-results+json"},
+                "headers":{"Accept":"application/sparql-results+json"},
                 "success":function(data, status, jqxhr) {
                   var grouperDiv = $("<div class='group'>");
                   grouperDiv.appendTo("#results-tabular div.tables");

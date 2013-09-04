@@ -13,6 +13,7 @@ var PrefixHelper = {
     "TIME": "http://www.w3.org/2006/time#"
   },
   reverse_namespaces: {},
+  prefix_cc_lookup: {},
   reverseMap: function(map) {
     var result = {};
     for(var ns in map) {
@@ -39,15 +40,18 @@ var PrefixHelper = {
     if(url in PrefixHelper.reverse_namespaces) {
       deferred.resolveWith(window, [ PrefixHelper.reverse_namespaces[url] ]);
     } else {
-      $.ajax("http://prefix.cc/reverse", {"dataType":"json","data":{"uri":url,"format":"json"}})
+      $.ajax("http://prefix.cc/reverse",
+             {"dataType":"json","data":{"uri":url,"format":"json"}})
         .then(function(response) {
           for(var prefix in response) {
             if(response.hasOwnProperty(prefix)) {
               PrefixHelper.namespaces[prefix.toUpperCase()] = response[prefix];
-              PrefixHelper.reverse_namespaces[response[prefix]] = prefix.toUpperCase();
+              PrefixHelper.reverse_namespaces[response[prefix]] =
+                prefix.toUpperCase();
             }
           }
-          deferred.resolveWith(window, [ prefix.toUpperCase(), response[prefix] ]);
+          deferred.resolveWith(window, [ prefix.toUpperCase(),
+                                         response[prefix] ]);
         },function() {
           deferred.resolveWith(window, [ null, null ]);
         });
@@ -56,7 +60,7 @@ var PrefixHelper = {
   },
   compact: function(uri, namespaces) {
     if( !namespaces ) {
-      namespaces = PrefixHelper.reverse_namespaces;
+      namespaces = PrefixHelper.prefix_cc_lookup;
     } else {
       namespaces = PrefixHelper.reverseMap(namespaces);
     }
@@ -74,9 +78,46 @@ var PrefixHelper = {
         return namespaces[base].toLowerCase() + ":" + uri.substring(idx);
       }
     }
+  },
+  curieObject: function(uri, namespaces) {
+    if( !namespaces ) {
+      namespaces = PrefixHelper.prefix_cc_lookup;
+    } else {
+      namespaces = PrefixHelper.reverseMap(namespaces);
+    }
+    var idx, base;
+    if(/#/.test(uri)) { 
+      idx = uri.lastIndexOf("#")+1;
+    } else {
+      idx = uri.lastIndexOf("/")+1;
+    }
+    base = uri.substring(0, idx);
+    if(base in namespaces) {
+      return {"prefix": namespaces[base], "prefixUri": base,
+              "local": uri.substring(idx)};
+    } else {
+      return {"prefix": null, "prefixUri": base,
+              "local": uri};
+    }
   }
 };
 
 (function() {
-  PrefixHelper.reverse_namespaces = PrefixHelper.reverseMap(PrefixHelper.namespaces);
+  PrefixHelper.reverse_namespaces =
+    PrefixHelper.reverseMap(PrefixHelper.namespaces);
 })();
+
+$.ajax("http://prefix.cc/popular/all.file.json")
+  .then(function(data) {
+    for(var prefix in data) {
+      if ( data.hasOwnProperty(prefix) ) {
+        var uri = data[prefix];
+        if ( PrefixHelper.prefix_cc_lookup[uri] === undefined ) {
+          PrefixHelper.prefix_cc_lookup[uri] = prefix;
+        }
+      }
+    }
+  })
+  .fail(function(jqxhr) {
+    return "Unexpected error: "+jqxhr.statusText;
+  });

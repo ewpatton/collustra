@@ -1,9 +1,11 @@
 PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
 
-SELECT DISTINCT ?Concept ?Label ?Comment WHERE {
+SELECT DISTINCT ?Concept
+#(SAMPLE(?l) AS ?Label)
+#(SAMPLE(?c) AS ?Comment)
+WHERE {
   [] a ?Concept
-  OPTIONAL {
-    ?Concept rdfs:label ?Label ;
-      rdfs:comment ?Comment
-  }
+  FILTER(!regex(str(?Concept), "^http://dbpedia.org/class/yago/"))
+#  OPTIONAL { ?Concept rdfs:label ?l }
+#  OPTIONAL { ?Concept rdfs:comment ?c }
 }

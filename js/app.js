@@ -68,7 +68,7 @@ var App = {
          * @param uri {string} URI of the endpoint added
          */
         $(window).trigger("new_endpoint", [ endpoint.uri ]);
-        if( deferred !== null ) {
+        if( deferred !== undefined ) {
           deferred.resolveWith(window, [ endpoint.uri ]);
         }
       },
@@ -158,6 +158,11 @@ var App = {
      */
     var items = {};
     /**
+     * Map of query template URIs to query template text
+     * @private
+     */
+    var templates = {};
+    /**
      * Initialization function for the query cache.
      * @private
      */
@@ -165,11 +170,25 @@ var App = {
       $(window).bind("queryload", function(event, uri, text) {
         items[uri] = text;
       });
+      $(window).bind("querytemplateload", function(event, uri, text) {
+        templates[uri] = text;
+      });
     };
     init();
     return {
-      getQueries: function() {
-        return items;
+      getQuery: function(uri) {
+        if ( uri === undefined ) { 
+          return items;
+        } else {
+          return items[uri];
+        }
+      },
+      getQueryTemplate: function(uri) {
+        if ( uri === undefined ) {
+          return templates;
+        } else {
+          return templates[uri];
+        }
       },
       getQueryFromURI: function(uri) {
         var deferred = $.Deferred();
@@ -186,6 +205,23 @@ var App = {
              $(window).trigger("queryload_failed", [uri, jqxhr.statusText]);
              deferred.rejectWith(window, [uri, jqxhr.statusText]);
            }});
+        return deferred.promise();
+      },
+      getQueryTemplateFromURI: function(uri) {
+        var deferred = $.Deferred();
+        if(uri in templates) {
+          $(window).trigger("querytemplateload", [uri, templates[uri]]);
+          deferred.resolveWith(window, [uri, templates[uri]]);
+        } else {
+          $.ajax(uri)
+            .done(function(data) {
+              $(window).trigger("querytemplateload", [uri, data]);
+              deferred.resolveWith(window, [uri, data]);
+            }).fail(function(jqxhr) {
+              $(window).trigger("querytemplateload_failed", [uri, jqxhr.statusText]);
+              deferred.rejectWith(window, [uri, jqxhr.statusText]);
+            });
+        }
         return deferred.promise();
       }
     };
@@ -304,7 +340,7 @@ var App = {
               : null;
             var query = Query.fromSPIN( queries, graph, uri );
             query.label = label;
-            query.endpoint = endpoint;
+            query.addEndpoint( App.Endpoints.getEndpoint( endpoint ) );
             if ( comment ) {
               query.comment = comment;
             }
@@ -395,10 +431,73 @@ var App = {
        * @memberof App.QueryCanvas
        */
       getQuery: function(queryId) {
+        if ( queryId === undefined ) {
+          return items;
+        }
         var idx = queryId.lastIndexOf("_");
         var queryArray = items[queryId.substr(0, idx)];
         var index = parseInt(queryId.substr(idx+1));
         return queryArray[index];
+      },
+      /**
+       * Creates a new variable for a query instance. If a variable with the
+       * given varName already exists in the query, a fresh variable will be
+       * minted. This method returns a guaranteed unique variable.
+       * @param {string} queryId
+       * @param {string} varName
+       * @return {Query.Variable}
+       */
+      addVariable: function(queryId, varName) {
+        var newVarName = varName;
+        var i = 0;
+        var query = App.QueryCanvas.getQuery(queryId);
+        while ( newVarName in query.variables ) {
+          newVarName = varName + (++i);
+        }
+        var newVarUri = URI("#"+newVarName).absoluteTo(URI(query.uri));
+        var newVar = new Query.Variable(newVarUri.toString(), newVarName);
+        query.variables[newVarName] = newVar;
+        $(window).trigger("variable_added", [ queryId, newVar ]);
+        return newVar;
+      },
+      /**
+       * Projects a variable in the query. The variable must already exist.
+       * @see #addVariable
+       * @param {string} queryId
+       * @param {Query.Variable} variable
+       * @param {boolean} [project=true]
+       */
+      project: function(queryId, variable, project) {
+        if ( project === undefined ) {
+          project = true;
+        }
+        var query = App.QueryCanvas.getQuery(queryId);
+        // TODO state/error checking. query.variables should contain variable
+        // TODO remove variable if project === false
+        query.projections.push(variable);
+        $(window).trigger(project ? "projection_added" : "projection_removed",
+                          [ queryId, variable ]);
+      },
+      /**
+       * Adds a basic graph pattern to the where clause of a query.
+       * @param {string} queryId
+       * @param {(string|Query.Resource|Query.Variable)} subj
+       * @param {(string|Query.Resource|Query.Variable)} pred
+       * @param {(string|Query.Resource|Query.Variable|Query.Literal)} obj
+       */
+      addWhereClause: function(queryId, subj, pred, obj) {
+        var query = App.QueryCanvas.getQuery(queryId);
+        if ( typeof subj === "string" ) {
+          subj = new Query.Resource( subj );
+        }
+        if ( typeof pred === "string" ) {
+          pred = new Query.Resource( pred );
+        }
+        if ( typeof obj === "string" ) {
+          obj = new Query.Resource( obj );
+        }
+        query.where.push(new Query.BasicGraphPattern( subj, pred, obj ));
+        $(window).trigger("updated_query", [ queryId ]);
       },
       /**
        * Instantiates a new {@link Query} object for a given URI using the SPIN
