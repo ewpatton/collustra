@@ -140,6 +140,10 @@ var View = {
           create(uri);
         });
         configureEndpointDrop();
+        $("#endpoints select").change(function() {
+          View.ConceptList.refresh();
+          View.QueryList.refresh();
+        });
       },
       /**
        * Shows the endpoint dialog for a given URI and an optional deferred
@@ -310,7 +314,9 @@ var View = {
      * @private
      */
     var doSelect = function(event, ui) {
-      if ( $(this).hasClass("ui-selected") ) $(this).removeClass("ui-selected");
+      if ( $(this).hasClass("ui-selected") ) {
+        $(this).removeClass("ui-selected");
+      }
     }
 
     /**
@@ -329,7 +335,9 @@ var View = {
         });
       },
       refresh: function() {
-        var concepts = App.ConceptList.getConcepts();
+        var endpoint = $( "#endpoints select" ).val();
+        endpoint = App.Endpoints.getEndpoint( endpoint );
+        var concepts = App.ConceptList.getConceptsFromEndpoint( endpoint );
         var sorted = [];
         for(var uri in concepts) {
           if ( concepts.hasOwnProperty( uri ) ) {
@@ -340,6 +348,7 @@ var View = {
           return a.label < b.label ? -1 : a.label > b.label ? 1 : 0;
         });
         var ul = $("#query-list #concepts ul");
+        ul.empty();
         $.map(sorted, function(concept) {
           var li = ul.find("li[uri='"+concept.uri+"']");
           if(li.length == 0) {

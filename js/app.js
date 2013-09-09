@@ -238,6 +238,8 @@ var App = {
     ];
     var concepts = {
     };
+    var conceptsByEndpoint = {
+    };
     return {
       getConcept: function(uri) {
         return concepts[uri];
@@ -247,6 +249,12 @@ var App = {
       },
       getConceptQuery: function(uri) {
         return Query.templateForClass(concepts[uri].endpoints[0], uri);
+      },
+      getConceptsFromEndpoint: function(endpoint) {
+        if ( typeof endpoint !== "string" ) {
+          endpoint = endpoint.uri;
+        }
+        return conceptsByEndpoint[endpoint];
       },
       loadConceptsFromEndpoint: function(endpoint) {
         if ( typeof endpoint === "string" ) {
@@ -262,6 +270,7 @@ var App = {
             endpoint.query(query)
               .done(function(data) {
                 var bindings = data.results.bindings;
+                conceptsByEndpoint[endpoint.uri] = {};
                 var newClasses =
                   $.map(bindings, function(binding) {
                     var isNew = false;
@@ -292,12 +301,13 @@ var App = {
                         concepts[uri].endpoints = [];
                       }
                       concepts[uri].endpoints.push( endpoint.uri );
+                      conceptsByEndpoint[endpoint.uri][uri] = concepts[uri];
                     } catch(e) {
                       console.warn("Exception while processing concepts:" + e);
                     }
                     return isNew === false ? undefined : isNew;
                   });
-                deferred.resolveWith( window, [ newClasses ] );
+                deferred.resolveWith( window, [ endpoint ] );
               })
               .fail(function(jqxhr) {
                 deferred.rejectWith(window, [ jqxhr.status,
