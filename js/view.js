@@ -915,7 +915,7 @@ var View = {
             View.QueryResults.addQueryResults( newId );
             var queryInfo = App.QueryCanvas.getQuery(newId);
             var p = $("pre[queryId='"+oldId+"']");
-            p.text("# " + queryInfo.label + queryInfo.toString());
+            p.text("# " + queryInfo.label + "\r\n" + queryInfo.toString());
             p.attr("queryId", newId);
           } else {
             // TODO some update mechanism here...
@@ -924,14 +924,14 @@ var View = {
             View.QueryResults.addQueryResults( oldId );
             var queryInfo = App.QueryCanvas.getQuery(oldId);
             $("pre[queryId='"+oldId+"']")
-              .text("# " + queryInfo.label + "\n" + queryInfo.toString());
+              .text("# " + queryInfo.label + "\r\n" + queryInfo.toString());
           }
         });
         $(window).bind("instantiated_query", function(e, queryId) {
           var div = $("#results-raw-sparql")
           var queryInfo = App.QueryCanvas.getQuery(queryId);
           var p = $("<pre>");
-          p.text("# " + queryInfo.label + "\n" + queryInfo.toString());
+          p.text("# " + queryInfo.label + "\r\n" + queryInfo.toString());
           p.attr("queryId", queryId);
           div.append(p);
         });
@@ -975,7 +975,7 @@ var View = {
                   computeJoinDivs(table, joinDiv);
                   table.find("tr.query-variables th").draggable({
                     scroll:true, scrollSpeed: 20, scrollSensitivity: 100,
-                    axis:"x", refreshPositions:true,
+                    axis:"x", refreshPositions:true, distance: 10,
                     appendTo: $("#query-results div.tables"),
                     helper: columnDragHelper, start: columnDragStart,
                     stop: columnDragStop});
@@ -996,6 +996,67 @@ var View = {
         var table = $("div.tables table[queryId='"+queryId+"']");
         table.parent().css("display", "none");
         window.setTimeout(function() { table.parent().remove(); }, 100);
+      },
+      doBindVariable: function(event, data) {
+        console.log(arguments);
+        var queryId = data.$trigger.parents("[queryId]").attr("queryId");
+        var queryInfo = App.QueryCanvas.getQuery(queryId);
+        var var_name = data.$trigger.text();
+        var variable = queryInfo.getVariable(var_name);
+        var dialog = $( "#bind-variable-dialog" );
+        dialog.attr( "queryId", queryId );
+        dialog.attr( "varName", var_name );
+        dialog.find( "select" ).empty();
+        dialog.dialog( "open" );
+        App.QueryCache.getQueryTemplateFromURI("queries/describe-objects.rqt")
+          .then(function(uri, template) {
+            var queryText = queryInfo.applyToTemplate(template,
+                                                      {"VARIABLE": variable});
+            var endpoint = queryInfo.getActiveEndpoint();
+            return endpoint.query(queryText);
+          })
+          .done(function(data) {
+            //var select = $( "#bind-variable-dialog select" );
+            var select = $( "<select>" );
+            $.map(data.results.bindings, function(binding) {
+              var value = binding[var_name].value;
+              var isUri = binding[var_name].type === "uri";
+              var datatype = !isUri ? binding[var_name].datatype : null;
+              var lang = !isUri ? binding[var_name]["xml:lang"] : null;
+              var label = isUri ? value : binding.Label !== undefined ?
+                binding.Label.value : labelFromUri( value );
+              $("<option>").val(value).text(label).attr( "datatype", datatype )
+                .attr( "uri", isUri ).attr( "lang", lang ).appendTo( select );
+            });
+            $( "#bind-variable-dialog select" ).replaceWith( select );
+          })
+          .fail(function() {
+            $( "#bind-variable-dialog" ).dialog( "close" );
+            console.log(arguments);
+          });
+      },
+      // TODO MVC breaking down here. refactor when possible.
+      finishBindVariable: function() {
+        var dialog = $( this );
+        dialog.dialog( "close" );
+        var queryId = dialog.attr( "queryId" );
+        var var_name = dialog.attr( "varName" );
+        dialog.attr( "queryId", null );
+        dialog.attr( "varName", null );
+        var value = dialog.find( "select" ).val();
+        var option = dialog.find( "select :selected" );
+        var isUri = option.attr("uri") === "true";
+        var datatype = option.attr("datatype");
+        var lang = option.attr("lang");
+        if ( isUri ) {
+          value = new Query.Resource( value );
+        } else {
+          value = new Query.Literal( value, datatype, lang );
+        }
+        App.QueryCanvas.substitute( queryId, var_name, value );
+      },
+      cancelBindVariable: function() {
+        $( "#bind-variable-dialog" ).dialog( "close" );
       }
     };
   })(),
@@ -1050,6 +1111,10 @@ var View = {
                                     callback:function(event, data) {
                                       data.$trigger.parent().remove();
                                     }}}});
+    $.contextMenu({"selector":"tr.query-variables th",
+                   "items":{
+                     bind:{name:"Bind Variable",
+                           callback:View.QueryResults.doBindVariable}}});
 
     View.Endpoints.init();
     View.QueryList.init();
@@ -1060,5 +1125,11 @@ var View = {
       {"modal":true,"resizable":false,"draggable":false,
        "autoOpen": false, "title":"Error","buttons":[
          {text:"Dismiss",click:function() { $(this).dialog( "close" );}}]});
+    $("#bind-variable-dialog").dialog(
+      {"modal": true, "resizable": false, "draggable": false,
+       "autoOpen": false, "title": "Bind Variable", "buttons": [
+         {text:"Cancel",click:View.QueryResults.cancelBindVariable},
+         {text:"Save",click:View.QueryResults.finishBindVariable}
+       ]});
   }
 };

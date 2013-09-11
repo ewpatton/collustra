@@ -617,6 +617,14 @@ var App = {
         // update old query1 with new queryId
         $(window).trigger( "updated_query", [ query1.query.queryId,
                                               newQueryId ]);
+      },
+      substitute: function( queryId, oldObj, newObj ) {
+        var query = App.QueryCanvas.getQuery( queryId );
+        if ( typeof oldObj === "string" ) {
+          oldObj = query.getVariable( oldObj );
+        }
+        oldObj.bind( newObj );
+        $(window).trigger( "updated_query", [ queryId ]);
       }
     };
   })(),

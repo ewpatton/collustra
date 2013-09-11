@@ -7,7 +7,7 @@ html, body { height: 100%; }
 #query-list div.ui-tabs-panel .ui-selected { background: #F39814; color: white; }
 #query-list div.ui-tabs-panel ul { list-style-type: none; margin: 0; padding: 0; }
 #query-list div.ui-tabs-panel ul li {
-    margin: 3px; padding: 0.2em; font-size: 0.8em; height: 14px;
+    margin: 3px; padding: 0.2em; font-size: 0.8em;
 }
 
 #query-list div.ui-tabs-panel {
@@ -418,6 +418,19 @@ a[href='#results-timeline'] {
 
 a[href='#results-timeline']:hover, .ui-tabs-active a[href='#results-timeline'] {
     background-image: url(../images/chart.png);
+}
+
+.ui-autocomplete {
+    max-height: 300px;
+    overflow-y: auto;
+    /* prevent horizontal scrollbar */
+    overflow-x: hidden;
+}
+/* IE 6 doesn't support max-height
+ * we use height instead, but this forces the menu to always be this tall
+ */
+* html .ui-autocomplete {
+    height: 300px;
 }
 
 /** ----- Spinner CSS ----- **/

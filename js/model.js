@@ -178,7 +178,7 @@ Query.prototype.serializeProjections = function() {
     var result = "";
     for ( var i = 0; i < this.projections.length; i++ ) {
       result += " ";
-      result += this.projections[i].toString();
+      result += this.projections[i].toString( undefined, "projection" );
     }
     return result;
   }
@@ -557,6 +557,15 @@ Query.templateForClass = function(endpoint, uri) {
 Query.Variable = function(uri, varName) {
   this.uri = uri;
   this.varName = varName;
+  this.boundValue = null;
+};
+
+Query.Variable.prototype.bind = function( value ) {
+  this.boundValue = value;
+};
+
+Query.Variable.prototype.unbind = function() {
+  this.boundValue = null;
 };
 
 /**
@@ -566,7 +575,13 @@ Query.Variable = function(uri, varName) {
  *  => "?uri"
  * @return {string} Variable string
  */
-Query.Variable.prototype.toString = function() {
+Query.Variable.prototype.toString = function(namespaces, context) {
+  if ( this.boundValue !== null ) {
+    if ( context === "projection" ) {
+      return "(" + this.boundValue.toString() + " AS ?" + this.varName + ")";
+    }
+    return this.boundValue.toString();
+  }
   return "?" + this.varName;
 };
 
@@ -577,6 +592,7 @@ Query.Variable.prototype.toString = function() {
  */
 Query.Variable.prototype.clone = function() {
   var copy = new Query.Variable(this.uri, this.varName);
+  copy.boundValue = this.boundValue;
   return copy;
 };
 
@@ -644,6 +660,7 @@ Query.JoinedQueryType = {
 Query.JoinedVariable = function(query1, query2, type) {
   this.uri = query1.variable.uri;
   this.varName = query1.variable.varName;
+  this.boundValue = query1.variable.boundValue || query2.variable.boundValue;
   this.orgQuery = query1;
   this.joinedTo = query2;
   this.joinType = type || Query.JoinedQueryType.Substitution;
@@ -651,9 +668,11 @@ Query.JoinedVariable = function(query1, query2, type) {
 
 Query.JoinedVariable.prototype = Object.create(Query.Variable.prototype);
 
+/*
 Query.JoinedVariable.prototype.toString = function() {
   return "?"+this.varName;
 };
+*/
 
 /**
  * @class Resource
@@ -690,6 +709,48 @@ Query.Resource.prototype.equals = function(other) {
     return true;
   }
   return this.uri === other.uri && this.bnode === other.bnode;
+};
+
+Query.Literal = function(value, datatype, lang) {
+  this.value = value;
+  this.datatype = datatype;
+  this.lang = lang;
+};
+
+Query.Literal.prototype.toString = function(namespaces) {
+  var wrap = '"';
+  if ( /[\r|\n]/.test( this.value ) ) {
+    wrap = '"""';
+  }
+  if ( this.datatype !== undefined ) {
+    var dtcurie = PrefixHelper.compact( this.datatype, namespaces );
+    if ( dtcurie !== null ) {
+      return wrap + this.value + wrap + "^^" + dtcurie;
+    } else {
+      return wrap + this.value + wrap + "^^<" + this.datatype + ">";
+    }
+  } else if ( this.lang !== undefined ) {
+    return wrap + this.value + wrap + "@" + this.lang;
+  } else {
+    return wrap + this.value + wrap;
+  }
+};
+
+Query.Literal.prototype.clone = function() {
+  var copy = new Query.Literal( this.value, this.datatype, this.lang );
+  return copy;
+};
+
+Query.Literal.prototype.equals = function(other) {
+  if ( other === null ) {
+    return false;
+  } else if ( !( other instanceof Query.Literal ) ) {
+    return false;
+  } else if ( this === other ) {
+    return true;
+  }
+  return this.value === other.value && this.datatype === other.datatype &&
+    this.lang === other.lang;
 };
 
 Query.GraphComponent = function() {
@@ -783,7 +844,7 @@ Query.prototype.clone = function() {
   if ( this.label ) {
     copy.label = this.label;
   }
-  copy.endpoints = cloneArray(this.endpoints);
+  copy.endpoints = cloneDict( this.endpoints );
   copy.activeEndpoint = this.activeEndpoint;
   if ( this.prefixes ) {
     copy.prefixes = cloneDict( this.prefixes );
