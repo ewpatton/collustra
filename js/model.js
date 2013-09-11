@@ -141,19 +141,19 @@ Query.prototype.serializePrefixes = function() {
     var curie;
     if(bgp.subject instanceof Query.Resource) {
       curie = PrefixHelper.curieObject(bgp.subject.uri);
-      if( !(curie.prefix in prefixes) ) {
+      if( curie.prefix !== null && !(curie.prefix in prefixes) ) {
         prefixes[curie.prefix] = curie.prefixUri;
       }
     }
     if(bgp.predicate instanceof Query.Resource) {
       curie = PrefixHelper.curieObject(bgp.predicate.uri);
-      if( !(curie.prefix in prefixes) ) {
+      if( curie.prefix !== null && !(curie.prefix in prefixes) ) {
         prefixes[curie.prefix] = curie.prefixUri;
       }
     }
     if(bgp.object instanceof Query.Resource) {
       curie = PrefixHelper.curieObject(bgp.object.uri);
-      if( !(curie.prefix in prefixes) ) {
+      if( curie.prefix !== null && !(curie.prefix in prefixes) ) {
         prefixes[curie.prefix] = curie.prefixUri;
       }
     }

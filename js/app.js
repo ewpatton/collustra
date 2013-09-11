@@ -300,8 +300,10 @@ var App = {
                       if ( concepts[uri].endpoints === undefined ) {
                         concepts[uri].endpoints = [];
                       }
-                      concepts[uri].endpoints.push( endpoint.uri );
-                      conceptsByEndpoint[endpoint.uri][uri] = concepts[uri];
+                      concepts[ uri ].endpoints.push( endpoint );
+                      concepts[ uri ].activeEndpoint = endpoint.uri;
+                      conceptsByEndpoint[ endpoint.uri ][ uri ] =
+                        concepts[ uri ];
                     } catch(e) {
                       console.warn("Exception while processing concepts:" + e);
                     }
