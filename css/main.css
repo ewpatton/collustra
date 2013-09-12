@@ -1,4 +1,7 @@
-html, body { height: 100%; }
+html, body {
+    height: 100%;
+    font-family: Verdana, Arial, sans-serif;
+}
 
 #left-pane { position:absolute; top:0; left: 0; width: 75%; height: 100%;}
 #right-pane { position:absolute; top:0; left: 75%; width: 25%; height: 100%; }
