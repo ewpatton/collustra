@@ -436,7 +436,7 @@ var View = {
                             "content":value["comment"]});
               span.click(View.Canvas.showLinkages);
             });
-      var queryId = App.QueryCanvas.instantiate(uri);
+      var queryId = App.QueryCanvas.instantiate(uri, $("#endpoints select").val());
       div.attr("queryId", queryId);
       $(window).trigger("dropped_query", [queryId]);
     };
@@ -513,7 +513,8 @@ var View = {
             var ul = $("<ul>");
             ul.appendTo(el);
             var bindings = data.results.bindings;
-            if ( bindings.length === 0 ) {
+            if ( bindings.length === 0 ||
+                 bindings[0].Property === undefined ) {
               var li = $("<li>");
               li.appendTo(ul);
               li.html("<em>No properties found</em>");

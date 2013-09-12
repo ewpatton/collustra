@@ -139,6 +139,10 @@ Query.prototype.serializePrefixes = function() {
   var prefixes = {};
   $.map(this.where, function(bgp) {
     var curie;
+    if(bgp instanceof Query.ServiceBlock) {
+      result += Query.prototype.serializePrefixes.call( bgp );
+      return;
+    }
     if(bgp.subject instanceof Query.Resource) {
       curie = PrefixHelper.curieObject(bgp.subject.uri);
       if( curie.prefix !== null && !(curie.prefix in prefixes) ) {
@@ -854,8 +858,55 @@ Query.prototype.clone = function() {
   return copy;
 };
 
+Query.ServiceBlock = function( query, map ) {
+  var copy, i;
+  this.endpoints = query.endpoints;
+  this.activeEndpoint = query.activeEndpoint;
+  this.where = [];
+  this.variables = {};
+  for ( i = 0; i < query.where.length; i++ ) {
+    copy = query.where[i].clone();
+    if ( map !== undefined ) {
+      copy.subject = map[copy.subject.varName] || copy.subject;
+      copy.predicate = map[copy.predicate.varName] || copy.predicate;
+      copy.object = map[copy.object.varName] || copy.object;
+    }
+    if ( copy.subject.varName !== undefined &&
+         this.variables[copy.subject.varName] === undefined ) {
+      this.variables[copy.subject.varName] = copy.subject;
+    } else if ( copy.subject instanceof Query.Variable ) {
+      copy.subject = this.variables[copy.subject.varName];
+    }
+    if ( copy.predicate.varName !== undefined &&
+         this.variables[copy.predicate.varName] === undefined ) {
+      this.variables[copy.predicate.varName] = copy.predicate;
+    } else if ( copy.predicate instanceof Query.Variable ) {
+      copy.predicate = this.variables[copy.predicate.varName];
+    }
+    if ( copy.object.varName !== undefined &&
+         this.variables[copy.object.varName] === undefined ) {
+      this.variables[copy.object.varName] = copy.object;
+    } else if ( copy.object instanceof Query.Variable ) {
+      copy.object = this.variables[copy.object.varName];
+    }
+    this.where.push( copy );
+  }
+};
+
+Query.ServiceBlock.prototype.toString = function( namespaces ) {
+  var result = "\nSERVICE <" + this.activeEndpoint + "> {\n";
+  for ( var i = 0; i < this.where.length; i++ ) {
+    result += this.where[i].toString( i > 0 ? this.where[i-1] : undefined );
+  }
+  return result + "\n}\n";
+};
+
 Query.JoinedQuery = function(query1, query2, type) {
   type = type || Query.JoinedQueryType.Substitution;
+  if ( query1.query.activeEndpoint != query2.query.activeEndpoint ) {
+    // different endpoints, force SERVICE keyword
+    type = Query.JoinedQueryType.Service;
+  }
   var copy;
   // this won't be a valid URI, but it is internal for now.
   this.uri = query1.query.uri + query2.query.type;
@@ -900,15 +951,25 @@ Query.JoinedQuery = function(query1, query2, type) {
   }
   this.where = [];
   this.order = [];
+  for ( i = 0; i < query1.query.where.length; i++ ) {
+    copy = query1.query.where[i].clone();
+    copy.subject = map[copy.subject.varName] || copy.subject;
+    copy.predicate = map[copy.predicate.varName] || copy.predicate;
+    copy.object = map[copy.object.varName] || copy.object;
+    this.where.push( copy );
+  }
+  for ( i = 0; i < query1.query.order.length; i++ ) {
+    copy = query1.query.order[i].clone();
+    if ( copy.expression instanceof Query.Variable ) {
+      copy.expression = map[copy.expression.varName];
+    }
+    if ( copy["expression"] === undefined ) {
+      throw "Expected an order expression to be a projected variable";
+    }
+    this.order.push( copy );
+  }
   if ( type === Query.JoinedQueryType.Substitution ) {
     // TODO this mechanism does not yet rename non-projected variables
-    for ( i = 0; i < query1.query.where.length; i++ ) {
-      copy = query1.query.where[i].clone();
-      copy.subject = map[copy.subject.varName] || copy.subject;
-      copy.predicate = map[copy.predicate.varName] || copy.predicate;
-      copy.object = map[copy.object.varName] || copy.object;
-      this.where.push( copy );
-    }
     for ( i = 0; i < query2.query.where.length; i++ ) {
       copy = query2.query.where[i].clone();
       copy.subject = map2[copy.subject.varName] || copy.subject;
@@ -916,26 +977,18 @@ Query.JoinedQuery = function(query1, query2, type) {
       copy.object = map2[copy.object.varName] || copy.object;
       this.where.push( copy );
     }
-    for ( i = 0; i < query1.query.order.length; i++ ) {
-      copy = query1.query.order[i].clone();
-      if ( copy.expression instanceof Query.Variable ) {
-        copy.expression = map[copy.expression.varName];
-      }
-      if ( copy["expression"] === undefined ) {
-        throw "Expected an order expression to be a projected variable";
-      }
-      this.order.push( copy );
+  } else if ( type === Query.JoinedQueryType.Service ) {
+    this.where.push( new Query.ServiceBlock( query2.query, map2 ) );
+  }
+  for ( i = 0; i < query2.query.order.length; i++ ) {
+    copy = query2.query.order[i].clone();
+    if ( copy.expression instanceof Query.Variable ) {
+      copy.expression = map2[copy.expression.varName];
     }
-    for ( i = 0; i < query2.query.order.length; i++ ) {
-      copy = query2.query.order[i].clone();
-      if ( copy.expression instanceof Query.Variable ) {
-        copy.expression = map2[copy.expression.varName];
-      }
-      if ( copy["expression"] === undefined ) {
-        throw "Expected an order expression to be a projected variable";
-      }
-      this.order.push( copy );
+    if ( copy["expression"] === undefined ) {
+      throw "Expected an order expression to be a projected variable";
     }
+    this.order.push( copy );
   }
   this.product = [];
   this.deletes = [];
@@ -947,6 +1000,7 @@ Query.JoinedQuery = function(query1, query2, type) {
   this.activeEndpoint = null;
   // Will not work when joining a query with joined query, you'll get
   // something like [ endpoint3, [ endpoint1, endpoint2 ] ]
+  // update to use splice to append multiple arrays together.
   var e1 = query1.query.getActiveEndpoint();
   var e2 = query2.query.getActiveEndpoint();
   if ( e1.equals(e2) ) {

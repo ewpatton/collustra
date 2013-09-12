@@ -521,11 +521,12 @@ var App = {
        * @returns {string} A identifier unique to the new query instantiation.
        * @memberof App.QueryCanvas
        */
-      instantiate: function(uri) {
+      instantiate: function(uri, activeEndpoint) {
         // hash to get a reasonably small identifier. collision is unlikely.
         var query = null;
         if ( uri in App.ConceptList.getConcepts() ) {
-          var endpoint = App.ConceptList.getConcept( uri ).endpoints[0];
+          var endpoint = activeEndpoint ||
+            App.ConceptList.getConcept( uri ).endpoints[0];
           query = Query.templateForClass( endpoint, uri );
           uri = query.uri;
         } else {
