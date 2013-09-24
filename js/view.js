@@ -952,40 +952,38 @@ var View = {
         queries.graph(endpoint, function(success, g) {
           graph = g;
         });
-        var sparql = queryInfo.toString({limit: 25});
-        $.ajax(endpoint,
-               {"data":{"output":"json","query":sparql},
-                "ajax":true,
-                "headers":{"Accept":"application/sparql-results+json"},
-                "success":function(data, status, jqxhr) {
-                  var grouperDiv = $("<div class='group'>");
-                  grouperDiv.appendTo("#results-tabular div.tables");
-                  var table = generateTable(queryInfo, data);
-                  table.attr("queryId", queryId);
-                  table.appendTo(grouperDiv);
-                  grouperDiv.parent().sortable(sortOpts);
-                  var pos = table.position();
-                  var div = $("<div class='drop-helper'>");
-                  div.css({position:"absolute",top:pos.top,left:pos.left,
-                           margin:"6pt",height:table.css("height"),
-                           width:table.css("width")})
-                    .appendTo(grouperDiv);
-                  var sortDiv = $("<div class='sort'>").appendTo(div);
-                  computeSortDivs(table, sortDiv);
-                  var joinDiv = $("<div class='join'>").appendTo(div);
-                  computeJoinDivs(table, joinDiv);
-                  table.find("tr.query-variables th").draggable({
-                    scroll:true, scrollSpeed: 20, scrollSensitivity: 100,
-                    axis:"x", refreshPositions:true, distance: 10,
-                    appendTo: $("#query-results div.tables"),
-                    helper: columnDragHelper, start: columnDragStart,
-                    stop: columnDragStop});
-                  div.find("div.drop");
-                },
-                "error":function(jqxhr, status, error) {
-                }}).always(function() {
-                  $("#query-results .spinner").css("display","none");
-                });
+        if ( typeof endpoint === "string" ) {
+          endpoint = App.Endpoints.getEndpoint( endpoint );
+        }
+        return endpoint.query( queryInfo, {limit: 25} )
+          .done(function(data, status, jqxhr) {
+            var grouperDiv = $("<div class='group'>");
+            grouperDiv.appendTo("#results-tabular div.tables");
+            var table = generateTable(queryInfo, data);
+            table.attr("queryId", queryId);
+            table.appendTo(grouperDiv);
+            grouperDiv.parent().sortable(sortOpts);
+            var pos = table.position();
+            var div = $("<div class='drop-helper'>");
+            div.css({position:"absolute",top:pos.top,left:pos.left,
+                     margin:"6pt",height:table.css("height"),
+                     width:table.css("width")})
+              .appendTo(grouperDiv);
+            var sortDiv = $("<div class='sort'>").appendTo(div);
+            computeSortDivs(table, sortDiv);
+            var joinDiv = $("<div class='join'>").appendTo(div);
+            computeJoinDivs(table, joinDiv);
+            table.find("tr.query-variables th").draggable({
+              scroll:true, scrollSpeed: 20, scrollSensitivity: 100,
+              axis:"x", refreshPositions:true, distance: 10,
+              appendTo: $("#query-results div.tables"),
+              helper: columnDragHelper, start: columnDragStart,
+              stop: columnDragStop});
+            div.find("div.drop");
+          }).fail(function(jqxhr, status, error) {
+          }).always(function() {
+            $("#query-results .spinner").css("display","none");
+          });
       },
       /**
        * Removes a query results table from the results view.

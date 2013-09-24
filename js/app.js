@@ -381,7 +381,7 @@ var App = {
             var queryUri = [endpoint];
             queryUri[1] = /\?/.test( endpoint ) ? "&" : "?";
             if ( proxy === true ) {
-              queryUri = [ "http://logd.tw.rpi.edu/sparql" ];
+              queryUri = [ "sparqlproxy.php" ];
               queryUri[1] = "?";
             }
             queryUri[2] = "query=";

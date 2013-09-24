@@ -22,6 +22,9 @@ var store = new rdfstore.Store({name:"rdfstore"},function(){});
 /** Stores the SPARQL descriptions (using SPIN) **/
 var queries = new rdfstore.Store({name:"querystore"},function(){});
 
+var sparqlResultTypes = "application/sparql-results+json, application/sparql-results+xml";
+var graphResultTypes = "text/turtle, application/ld+json, application/rdf+xml";
+
 /**
  * Traverses an rdf:List in the specified graph and converts it into a
  * JavaScript array for the purposes of iteration. This method assumes that the
@@ -1047,8 +1050,9 @@ Endpoint.prototype.equals = function(other) {
   }
 };
 
-Endpoint.prototype.query = function(query) {
-  var url = this.proxy ? "http://logd.tw.rpi.edu/sparql" : this.uri;
+Endpoint.prototype.query = function(query, opts, deferred) {
+  deferred = deferred || $.Deferred();
+  var url = this.proxy ? "sparqlproxy.php" : this.uri;
   var data = {};
   if ( this.proxy ) {
     data["output"] = "sparqljson";
@@ -1061,26 +1065,106 @@ Endpoint.prototype.query = function(query) {
   if ( typeof query === "string" ) {
     data["query"] = query;
     if ( /ask/i.test(query) || /select/i.test(query) ) {
-      headers = {"Accept": "application/sparql-results+json"};
+      headers = {"Accept": sparqlResultTypes};
     } else if ( /construct/i.test(query) || /describe/i.test(query ) ) {
-      headers = {"Accept": "text/turtle"};
+      headers = {"Accept": graphResultTypes};
     }
   } else {
-    data["query"] = query.toString();
+    data["query"] = query.toString( opts );
     switch ( query.type ) {
     case QueryType.Select:
     case QueryType.Ask:
-      headers = {"Accept": "application/sparql-results+json"};
+      headers = {"Accept": sparqlResultTypes};
       break;
     case QueryType.Construct:
     case QueryType.Describe:
-      headers = {"Accept": "text/turtle"};
+      headers = {"Accept": graphResultTypes};
       break;
     default:
       break;
     }
   }
-  return $.ajax(url, {"data": data, "headers": headers});
+  var self = this;
+  var doProxy = self.proxy;
+  $.ajax(url, {"data": data, "headers": headers})
+    .then(function(data, status, jqxhr) {
+      if ( stripMimeParameters( jqxhr.getResponseHeader( "Content-Type" ) )
+           == "application/sparql-results+xml" ) {
+        var results = {"head": {}, "results": {"bindings": []}};
+        var head = data.getElementsByTagName("head")[0];
+        var variables = head.getElementsByTagName("variable");
+        if ( variables.length > 0 ) {
+          results.head["vars"] = [];
+          $.map( variables, function( el ) {
+            results.head.vars.push( el.getAttribute( "name" ) );
+          });
+        }
+        var links = head.getElementsByTagName("link");
+        if ( links.length > 0 ) {
+          results.head["links"] = [];
+          $.map( links, function( el ) {
+            results.head.links.push( el.getAttribute( "href" ) );
+          });
+        }
+        var bindings = data.getElementsByTagName("result");
+        $.map( bindings, function( el ) {
+          var binding = {};
+          var b = el.getElementsByTagName( "binding" );
+          $.map( b, function( el ) {
+            var key = el.getAttribute( "name" );
+            var n = el.firstChild;
+            var type = n.tagName.toLowerCase();
+            var value = n.firstChild.textContent;
+            if ( type === "uri" ) {
+              binding[key] = {"type": "uri", "value": value};
+            } else if ( type === "bnode" ) {
+              binding[key] = {"type": "bnode", "value": value};
+            } else if ( type === "literal" ) {
+              if ( b.firstChild.getAttribute( "datatype" ) !== null ) {
+                var dt = b.firstChild.getAttribute( "datatype" );
+                binding[key] = {"type": "literal", "datatype": dt,
+                                "value": value};
+                return;
+              }
+              if ( b.firstChild.getAttribute( "xml:lang" ) !== null ) {
+                var lang = b.firstChild.getAttribute( "xml:lang" );
+                binding[key] = {"type": "literal", "xml:lang": lang,
+                                "value": value};
+                return;
+              }
+              binding[key] = {"type": "literal", "value": value};
+            } else {
+              console.warn( "Unknown element type: " + type );
+            }
+          });
+          results.results.bindings.push( binding );
+        });
+        deferred.resolveWith( this, [ results, status, jqxhr ] );
+      } else {
+        deferred.resolveWith( this, [ data, status, jqxhr ] );
+      }
+      return deferred.promise();
+    }, function(jqxhr, status, error) {
+      if ( jqxhr.state() === "rejected" && jqxhr.status === 0 &&
+           !doProxy ) {
+        self.proxy = true;
+        self.query(query, opts, deferred);
+      } else if ( jqxhr.status === 200 &&
+                  stripMimeParameters(jqxhr.getResponseHeader("Content-Type"))
+                  === "text/javascript" ) {
+        try {
+          var data = JSON.parse(jqxhr.responseText);
+          deferred.resolveWith( this, [ data, jqxhr.status, jqxhr ] );
+        } catch( e ) {
+          deferred.rejectWith(this, [ jqxhr, status, error ]);
+        }
+        return deferred.promise();
+      } else {
+        deferred.rejectWith(this, [ jqxhr, status, error ]);
+        return deferred.promise();
+      }
+    });
+  return deferred.promise();
 };
 
 (function() {
@@ -1131,8 +1215,8 @@ Endpoint.prototype.readDescription = function(deferred) {
     args["query-option"] = "text";
     args["output"] = "rdfn3";
   }
-  $.ajax(this.proxy ? "http://logd.tw.rpi.edu/sparql" : this.uri,
-         {"data": args, "headers": {"Accept": "text/turtle"}})
+  $.ajax(this.proxy ? "sparqlproxy.php" : this.uri,
+         {"data": args, "headers": {"Accept": graphResultTypes}})
     .fail(function(jqxhr) {
       if ( jqxhr.state() === "rejected" && jqxhr.status === 0 ) {
         // CORS rejection, attempt to proxy
@@ -1142,9 +1226,9 @@ Endpoint.prototype.readDescription = function(deferred) {
         deferred.reject();
       }
     })
-    .done(function(data) {
-      store.load("text/turtle", data, self.uri,
-                 function(success) {
+    .done(function(data, code, jqxhr) {
+      store.load(stripMimeParameters(jqxhr.getResponseHeader("Content-Type")),
+                 data, self.uri, function(success) {
                    if(!success) {
                      throw "Unable to parse turtle model.";
                    }
@@ -1159,6 +1243,15 @@ Endpoint.prototype.readDescription = function(deferred) {
   return deferred.promise();
 };
 })();
+
+function stripMimeParameters(mime) {
+  var idx = mime.indexOf(';');
+  if ( idx >= 0 ) {
+    return mime.substr( 0, idx );
+  } else {
+    return mime;
+  }
+}
 
 /**
  * Expands a string in camel case into a string with spaces
