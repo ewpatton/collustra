@@ -918,9 +918,12 @@ Query.JoinedQuery = function(query1, query2, type) {
   this.joinType = type;
   var map = {};
   var map2 = {};
+  var mapByUri = {};
   this.joinVariable = new Query.JoinedVariable(query1, query2, type);
   map[query1.variable.varName] = this.joinVariable;
   map2[query2.variable.varName] = this.joinVariable;
+  mapByUri[query1.variable.uri] = this.joinVariable;
+  mapByUri[query2.variable.uri] = this.joinVariable;
   var i;
   for ( i = 0; i < query1.query.projections.length; i++ ) {
     if ( query1.variable.equals( query1.query.projections[i] ) ) {
@@ -928,6 +931,7 @@ Query.JoinedQuery = function(query1, query2, type) {
     } else {
       copy = query1.query.projections[i].clone();
       map[copy.varName] = copy;
+      mapByUri[copy.uri] = copy;
       this.projections.push( copy );
     }
   }
@@ -937,19 +941,23 @@ Query.JoinedQuery = function(query1, query2, type) {
       continue;
     } else {
       copy = query2.query.projections[i].clone();
-      while ( map[copy.varName] !== undefined ||
-              map2[copy.varName] !== undefined ) {
-        var idx = copy.varName.search(/[0-9]+$/);
-        if ( idx >= 0 ) {
-          var count = parseInt( copy.varName.substr( idx ) );
-          copy.varName = copy.varName.substr( 0, idx ) +
-            ( count + 1 );
-        } else {
-          copy.varName += "1";
+      if ( copy.uri in mapByUri ) {
+        copy = mapByUri[copy.uri];
+      } else {
+        while ( map[copy.varName] !== undefined ||
+                map2[copy.varName] !== undefined ) {
+          var idx = copy.varName.search(/[0-9]+$/);
+          if ( idx >= 0 ) {
+            var count = parseInt( copy.varName.substr( idx ) );
+            copy.varName = copy.varName.substr( 0, idx ) +
+              ( count + 1 );
+          } else {
+            copy.varName += "1";
+          }
         }
+        this.projections.push( copy );
       }
       map2[query2.query.projections[i].varName] = copy;
-      this.projections.push( copy );
     }
   }
   this.where = [];
