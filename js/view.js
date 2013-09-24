@@ -790,8 +790,12 @@ var View = {
           var td = $("<td>");
           td.appendTo( tr );
           if( value.type === "uri" ) {
-            td.html( '&lt;<a href="' + value.value + '" target="_new">' +
-                     value.value + '</a>&gt;');
+            var text = value.value;
+            if ( text.length > 20 ) {
+              text = text.substr(0, 8) + "..." + text.substr(text.length - 8);
+            }
+            td.html( '&lt;<a href="' + value.value + '" target="_new" title="' + value.value + '">' +
+                     text + '</a>&gt;');
           } else if( value.type === "literal" ) {
             if( value.datatype === undefined &&
                 value["xml:lang"] === undefined ) {
