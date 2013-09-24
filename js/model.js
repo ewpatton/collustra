@@ -1038,6 +1038,10 @@ function Endpoint(uri) {
   this.proxy = false;
 };
 
+Endpoint.prototype.toString = function() {
+  return this.uri;
+};
+
 /**
  * Compares two endpoints for equality.
  * @param {*} other An object to test for equality.
