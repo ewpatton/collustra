@@ -1,10 +1,13 @@
 #@QUERY_PREFIXES@#
 PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
 
-SELECT DISTINCT ?Property (SAMPLE(?l) AS ?Label) (SAMPLE(?c) AS ?Comment) (COUNT(DISTINCT #@VARIABLE@#) AS ?Occurrences)
+SELECT DISTINCT ?Property
+#(SAMPLE(?l) AS ?Label)
+#(SAMPLE(?c) AS ?Comment)
+(COUNT(DISTINCT #@VARIABLE@#) AS ?Occurrences)
 WHERE {
   #@QUERY_WHERE@#
   #@VARIABLE@# ?Property [] .
-  OPTIONAL { ?Property rdfs:label ?l }
-  OPTIONAL { ?Property rdfs:comment ?c }
+#  OPTIONAL { ?Property rdfs:label ?l }
+#  OPTIONAL { ?Property rdfs:comment ?c }
 } GROUP BY ?Property ORDER BY DESC(?Occurrences)
