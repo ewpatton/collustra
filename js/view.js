@@ -251,6 +251,7 @@ var View = {
         $(".tabs-bottom .ui-tabs-nav").removeClass("ui-corner-bottom");
         $(".tabs-bottom .ui-tabs-nav").appendTo(".tabs-bottom");
         $(window).bind("new_endpoint", function(event, uri) {
+          console.log("Loading endpoints from " + uri);
           App.QueryList.loadQueriesFromEndpoint( uri )
             .then(View.QueryList.refresh, View.showError);
         });
@@ -1110,10 +1111,14 @@ var View = {
 
     // enable the context menus
     $.contextMenu({"selector":"div.query span",
-                   "items":{remove:{name:"Remove Query",
-                                    callback:function(event, data) {
-                                      data.$trigger.parent().remove();
-                                    }}}});
+                   "items":
+                   {publish:{name:"Publish Query",
+                             callback:function(event, data) {
+                             }},
+                    remove:{name:"Remove Query",
+                            callback:function(event, data) {
+                              data.$trigger.parent().remove();
+                            }}}});
     $.contextMenu({"selector":"tr.query-variables th",
                    "items":{
                      bind:{name:"Bind Variable",
