@@ -418,11 +418,11 @@ a[href='#results-tabular']:hover, .ui-tabs-active a[href='#results-tabular'] {
     background-image: url(../images/spreadsheet.png);
 }
 
-a[href='#results-timeline'] {
+a[href='#results-chart'] {
     background-image: url(../images/chart-gray.png);
 }
 
-a[href='#results-timeline']:hover, .ui-tabs-active a[href='#results-timeline'] {
+a[href='#results-chart']:hover, .ui-tabs-active a[href='#results-chart'] {
     background-image: url(../images/chart.png);
 }
 

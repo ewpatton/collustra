@@ -24,6 +24,32 @@
     <script src="js/app.js"></script>
     <script src="js/view.js"></script>
     <script src="js/main.js"></script>
+    <script type="text/javascript" src="https://www.google.com/jsapi"></script>
+    <script type="text/javascript">
+      google.load("visualization", "1", {packages:["corechart"]});
+      google.setOnLoadCallback(drawChart);
+      function drawChart() {
+        var data = google.visualization.arrayToDataTable([
+          ['Age', 'Weight'],
+          [ 8,      12],
+          [ 4,      5.5],
+          [ 11,     14],
+          [ 4,      5],
+          [ 3,      3.5],
+          [ 6.5,    7]
+        ]);
+
+        var options = {
+          title: 'Age vs. Weight comparison',
+          hAxis: {title: 'Age', minValue: 0, maxValue: 15},
+          vAxis: {title: 'Weight', minValue: 0, maxValue: 15},
+          legend: 'none'
+        };
+
+        var chart = new google.visualization.ScatterChart(document.getElementById('chart_div'));
+        chart.draw(data, options);
+      }
+    </script>
   </head>
   <body ondragover="event.dataTransfer.effectAllowed='none'; event.dataTransfer.dropEffect='none'; return false;">
     <div class="ui-layout-center" id="left-pane" ondragover="event.dataTransfer.effectAllowed='none'; event.dataTransfer.dropEffect='none'; return false;">
@@ -35,12 +61,12 @@
             <li><a href="#results-raw-sparql" title="View raw SPARQL"></a></li>
             <li><a href="#results-tabular" title="View as tables"></a></li>
             <li><a href="#results-map" title="View on map"></a></li>
-            <li><a href="#results-timeline" title="View on timeline"></a></li>
+            <li><a href="#results-chart" title="View on chart"></a></li>
           </ul>
           <div id="results-raw-sparql"></div>
           <div id="results-tabular"><div class="tables"></div></div>
           <div id="results-map"></div>
-          <div id="results-timeline"></div>
+          <div id="results-chart"><div id="chart_div"></div></div>
         </div>
         <div class="spinner">
           <div class="background"></div>
