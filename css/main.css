@@ -32,6 +32,9 @@ html, body {
 
 #endpoints {
     padding: 0.5em;
+    box-sizing: border-box;
+    border: 2px inset;
+    font-size: 9pt;
 }
 
 #endpoints a {

@@ -58,4 +58,4 @@ $(document).ready(function() {
 });
 
 // for development only
-$.ajaxSetup({"cache":false});
+//$.ajaxSetup({"cache":false});

@@ -67,6 +67,13 @@ var QueryType = {
   "Create": 9
 };
 
+function Queryable() {
+}
+
+Queryable.prototype.query = function(query, opts, deferred) {
+  throw "Query method for type not implemented.";
+}
+
 /**
  * The Query object is used to represent and manipulate SPARQL queries using
  * the JavaScript Object Notation (JSON). The prototype function provides a
@@ -1004,7 +1011,17 @@ Query.JoinedQuery = function(query1, query2, type) {
   this.product = [];
   this.deletes = [];
   this.target = query1.query.target;
-  this.variables = $.extend({}, map, map2);
+  //this.variables = $.extend({}, map, map2);
+  this.variables = {};
+  var mapper = (function(obj) {
+    return function(key, value) {
+      if ( obj[ value.varName ] === undefined ) {
+        obj[ value.varName ] = value;
+      }
+    };
+  })(this.variables);
+  $.each(map, mapper);
+  $.each(map2, mapper);
   this.label = query1.query.label + " joined with " + query2.query.label;
   this.comment = query1.query.comment;
   this.endpoints = {};
@@ -1037,6 +1054,8 @@ function Endpoint(uri) {
   this.comment = "";
   this.proxy = false;
 };
+
+Endpoint.prototype = Object.create(Queryable.prototype);
 
 Endpoint.prototype.toString = function() {
   return this.uri;
@@ -1248,6 +1267,9 @@ Endpoint.prototype.readDescription = function(deferred) {
                      if(!found) {
                        throw "Unable to find endpoint graph in model.";
                      }
+                     console.debug("Loaded endpoint description into graph " +
+                                   self.uri);
+                     window.graph = graph;
                      processResults.call(self, graph, deferred);
                    });
                  });
@@ -1328,4 +1350,82 @@ function Concept(uri) {
   this.label = undefined;
   this.comment = undefined;
   this.endpoints = [];
+}
+
+function Document(uri) {
+  this.uri = uri;
+  this.label = undefined;
+  this.comment = undefined;
+  this.store = undefined;
+  this.graph = undefined;
+  this.load = $.Deferred();
+  this.store = new rdfstore.create();
+  var self = this;
+  this.store.execute(
+    "LOAD <"+uri+"> INTO GRAPH <"+uri+">",
+    function(success) {
+      if ( !success ) {
+        self.load.rejectWith( self );
+        return;
+      }
+      self.store.graph(uri, function(found, graph) {
+        if ( !found ) {
+          throw "Expected to find loaded graph, but couldn't.";
+        }
+        self.graph = graph;
+        self.load.resolveWith( self );
+      });
+    });
+}
+
+Document.prototype = Object.create(Queryable.prototype);
+
+Document.prototype.query = function(query, opts, deferred) {
+  deferred = deferred || $.Deferred();
+  query = query.toString(opts);
+  this.store.executeWithEnvironment(query, [this.uri], [], function(s, arr) {
+    if ( s === true ) {
+      var results = rdfstoreToSparqlResults( arr );
+      deferred.resolveWith( this, [ results ] );
+    } else {
+      deferred.rejectWith( this, [ arr ] );
+    }
+  });
+};
+
+Document.prototype.load = function() {
+  return this.load;
+};
+
+function rdfstoreToSparqlResults(arr) {
+  if ( arr === true || arr === false ) {
+    return {"head":{},"boolean":arr};
+  }
+  var vars = {};
+  var bindings = $.map(arr, function(e) {
+    var binding = {};
+    for(var v in e) {
+      if ( e.hasOwnProperty( v ) ) {
+        vars[v] = v;
+        binding[v] = {};
+        binding[v].value = e[v].value;
+        if ( e[v].token === "uri" ) {
+          binding[v].type = "uri";
+        } else if ( e[v].token === "blank" ) {
+          binding[v].type = "bnode";
+        } else if ( e[v].token === "literal" ) {
+          binding[v].type = "literal";
+          if ( e[v]['type'] !== undefined ) {
+            binding[v].datatype = e[v].type;
+          } else if ( e[v]['lang'] !== undefined ) {
+            binding[v]["xml:lang"] = e[v].lang;
+          }
+        } else {
+          throw "Unexpected token " + e[v].token;
+        }
+      }
+    }
+    return binding;
+  });
+  return {"head":{"vars":_.toArray(vars)},"results":{"bindings":bindings}};
 }

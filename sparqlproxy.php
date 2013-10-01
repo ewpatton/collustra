@@ -600,7 +600,15 @@ function process_data($service_uri, $params, $expected_input_mime_type, $xslt_ur
 			//download data
                     $opts = array('http' => array( 'header' => 'Accept: text/turtle, application/rdf+xml, application/sparql-results+json, application/sparql-results+xml, application/xml, text/xml\r\n' . 'User-Agent: PHP/5.3\r\n' ) );
                     $context = stream_context_create($opts);
-                    $data = file_get_contents($url, false, $context);
+                    $data = @file_get_contents($url, false, $context);
+                    $status = explode(" ", $http_response_header[0]);
+                    if($status[1] >= 400) {
+                        header("HTTP/1.1 500 Internal Server Error");
+                        header("Content-Type: text/html");
+                        echo "Target server returned the following status:";
+                        echo "<br />" . $http_response_header;
+                        return;
+                    }
                     foreach($http_response_header as $value) {
                         if(preg_match('/^Content-Type:/i', $value)) {
                             header($value);
