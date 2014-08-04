@@ -628,6 +628,30 @@ var App = {
         }
         oldObj.bind( newObj );
         $(window).trigger( "updated_query", [ queryId ]);
+      },
+      parameterize: function( queryId, param, options ) {
+        var query = App.QueryCanvas.getQuery( queryId );
+        var variable = query.getVariable( param );
+        query.parameterize( variable, options );
+        $(window).trigger( "updated_query", [ queryId ] );
+      },
+      unparameterize: function( queryId, param ) {
+        var query = App.QueryCanvas.getQuery( queryId );
+        var variable = query.getVariable( param );
+        query.unparameterize( variable );
+        $(window).trigger( "updated_query", [ queryId ] );
+      },
+      parseQuery: function( queryText ) {
+        var queryId = md5( queryText );
+        var query = Query.fromSPARQL( queryText,
+                                      window.location.href + "#" + queryId );
+        if ( ! ( queryId in items ) ) {
+          items[queryId] = [];
+        }
+        var i = items[queryId].length;
+        items[queryId].push( query );
+        queryId += "_" + i;
+        $(window).trigger( "instantiated_query", [ queryId ] );
       }
     };
   })(),

@@ -16,6 +16,33 @@ String.prototype.equals = function(other) {
   return this === other;
 };
 
+if (!String.prototype.startsWith) {
+  Object.defineProperty(String.prototype, 'startsWith', {
+    enumerable: false,
+    configurable: false,
+    writable: false,
+    value: function (searchString, position) {
+      position = position || 0;
+      return this.lastIndexOf(searchString, position) === position;
+    }
+  });
+}
+
+if (!String.prototype.endsWith) {
+  Object.defineProperty(String.prototype, 'endsWith', {
+    value: function (searchString, position) {
+      var subjectString = this.toString();
+      if (position === undefined || position > subjectString.length) {
+        position = subjectString.length;
+      }
+      position -= searchString.length;
+      var lastIndex = subjectString.indexOf(searchString, position);
+      return lastIndex !== -1 && lastIndex === position;
+    }
+  });
+}
+
+
 /** Stores the SPARQL endpoint descriptions **/
 var store = new rdfstore.Store({name:"rdfstore"},function(){});
 
@@ -77,6 +104,7 @@ var QueryType = {
 function Query(uri, type) {
   this.uri = uri;
   this.type = type;
+  this.label = "";
   this.projections = [];
   this.where = [];
   this.order = [];
@@ -86,6 +114,7 @@ function Query(uri, type) {
   this.variables = {};
   this.endpoints = {};
   this.activeEndpoint = null;
+  this.documentation = "";
 }
 
 Query.prototype.getActiveEndpoint = function() {
@@ -119,6 +148,69 @@ Query.prototype.getVariable = function(varid) {
   } else {
     throw "Unexpected varid '"+varid+"' in Query.getVariable";
   }
+};
+
+Query.prototype.parameterize = function(variable, options) {
+  var param = new Query.Parameter(variable, new Query.Parameter.Options());
+  $.extend( param, options );
+  var varid = variable.varName;
+  this.variables[varid] = param;
+
+  // update projections
+  for ( var i = 0 ; i < this.projections.length ; i++ ) {
+    if ( this.projections[i].varName == varid ) {
+      this.projections[i] = param;
+    }
+  }
+
+  // update where clause
+  for ( var i = 0 ; i < this.where.length ; i++ ) {
+    this.where[i].parameterize( param );
+  }
+
+  return this;
+};
+
+Query.prototype.unparameterize = function(variable) {
+  var varid = variable.varName;
+  /* cloning a Parameter using Varible's clone() will discard any Parameter-
+     specific properties. Cloning a Variable is a NO-OP (essentially) */
+  variable = Query.Variable.prototype.clone.apply(variable);
+  this.variables[varid] = variable;
+
+  // update projections
+  for ( var i = 0 ; i < this.projections.length ; i++ ) {
+    if ( this.projections[i].varName == varid ) {
+      this.projections[i] = variable;
+    }
+  }
+
+  // update where clause
+  for ( var i = 0 ; i < this.where.length ; i++ ) {
+    // parameterize performs substitution on varName, so
+    // this performs the replacement we seek
+    this.where[i].parameterize( variable );
+  }
+
+  return this;
+};
+
+Query.prototype.serializeMetadata = function() {
+  var result = "#name: " + this.label + "\n";
+  result += "#endpoint: " + this.activeEndpoint + "\n";
+  for ( var varName in this.variables ) {
+    var variable = this.variables[varName];
+    if ( variable instanceof Query.Parameter ) {
+      result += "#";
+      result += variable.required ? "%" : "$";
+      result += varName;
+      result += " type: " + variable.type;
+      result += " default: \"" + variable.defaultValue;
+      result += "\" docstring: \"" + variable.documentation;
+      result += "\"\n";
+    }
+  }
+  return result;
 };
 
 /**
@@ -226,6 +318,7 @@ Query.prototype.serializeWhereClause = function(wrap) {
 Query.prototype.toString = function(opts) {
   var result = "";
   if ( this.type === QueryType.Select ) {
+    result += this.serializeMetadata();
     result += this.serializePrefixes();
     result += "SELECT";
     result += this.serializeProjections();
@@ -244,6 +337,53 @@ Query.prototype.toString = function(opts) {
     }
   }
   return result;
+};
+
+QueryContext = {
+  "name": RDFS.label,
+  "query": SP.text,
+  "parameters": SPEX.parameter,
+  "doc": RDFS.comment
+};
+
+ParameterContext = {
+  "name": [ RDFS.label, SP.varName ],
+  "doc": RDFS.comment,
+  "type": SPEX.datatype,
+  "default": SPEX.default,
+  "required": { "@id": SPEX.required, "@type": XSD.boolean }
+};
+
+Query.prototype.getJSONLDDescription = function() {
+  var desc = {"@id": "", "name": "", "query": "", "parameters": [], "doc": ""};
+  desc["@id"] = this.uri;
+  if ( this.isParameterized() ) {
+    desc["@type"] = [ SP.Query, SPEX.ParameterizedQuery ];
+  }
+  desc["name"] = this.label;
+  desc["query"] = this.toString();
+  desc["parameters"] = this.getParameterJSONLD();
+  desc["doc"] = this.documentation;
+};
+
+Query.prototype.getParameterJSONLD = function() {
+  var params = [];
+  for ( var name in this.variables ) {
+    if ( this.variables.hasOwnProperty( name ) &&
+         this.variables[name] instanceof Query.Parameter ) {
+      params.push( this.variables[name].asJSONLD() );
+    }
+  }
+};
+
+Query.prototype.isParameterized = function() {
+  for ( var name in this.variables ) {
+    if ( this.variables.hasOwnProperty( name ) &&
+         this.variables[name] instanceof Query.Parameter ) {
+      return true;
+    }
+  }
+  return false;
 };
 
 /**
@@ -545,6 +685,133 @@ Query.templateForClass = function(endpoint, uri) {
   return query;
 };
 
+Query.fromSPARQL = function(text) {
+  var aqt = window.sparql.parser.parse(text);
+  var prefixes = aqt.prologue.prefixes,
+    base = aqt.prologue.base,
+    comments = aqt.prologue.comments,
+    info = aqt.units[0];
+  if ( info.kind != "select" ) {
+    throw "Only SELECT queries are supported by Collustra.";
+  }
+  var query = new Query("http://example.com/#", QueryType.Select);
+  var paramOpts = {};
+  // process metadata
+  var trimQuotes = function(str) {
+    if ( str.startsWith('"') && str.endsWith('"') ) {
+      return str.substring(1, str.length-1);
+    } else if ( str.startsWith("'") && str.endsWith("'") ) {
+      return str.substring(1, str.length-1);
+    } else {
+      return str;
+    }
+  };
+  if ( comments instanceof Array ) {
+    for ( var i = 0; i < comments.length; i++ ) {
+      // TODO: consider using JSON-LD in the comment
+      var comment = comments[i].value.trim();
+      if ( comment.startsWith( "name:" ) ) {
+        query.label = comment.substr(6);
+      } else if ( comment.startsWith( "endpoint:" ) ) {
+        var endpoint = comment.substr(10);
+        var label = endpoint.match(/\/\/([^\/]+)\//);
+        if ( !App.Endpoints.getEndpoint( endpoint ) ) {
+          endpoint = new Endpoint( endpoint, label );
+          App.Endpoints.addEndpoint( endpoint );
+        } else {
+          endpoint = App.Endpoints.getEndpoint( endpoint );
+        }
+        query.activeEndpoint = endpoint.uri;
+        query.endpoints[endpoint.uri] = endpoint;
+      } else {
+        var parts = comment.split(/ type: | default: | docstring: /g);
+        if ( parts.length >= 4 ) {
+          var newParamOpts = new Query.Parameter.Options();
+          var varName = parts[0].substr(1);
+          newParamOpts.required = parts[0].charAt(0) == '%';
+          newParamOpts.type = parts[1];
+          newParamOpts.defaultValue = trimQuotes(parts[2]);
+          newParamOpts.documentation = trimQuotes(parts[3]);
+          paramOpts[varName] = newParamOpts;
+        }
+      }
+    }
+  }
+  // process prefixes
+  var prefixMap = {};
+  for ( var i = 0; i < prefixes.length; i++ ) {
+    prefixMap[prefixes[i].prefix] = prefixes[i].local;
+  }
+  var getUri = function(uriObj) {
+    if ( uriObj.prefix != null ) {
+      return prefixMap[uriObj.prefix] + uriObj.suffix;
+    } else {
+      return uriObj.value;
+    }
+  };
+  // process projections
+  for ( var i = 0; i < info.projection.length; i++ ) {
+    var proj = info.projection[i];
+    if ( proj.kind != "var" ) {
+      // TODO: support aliases and expression in projections
+      throw "Projections included non-variable."
+    }
+    var varName = proj.value.value;
+    var newProj = new Query.Variable(query.uri+varName, varName);
+    if ( proj.value.parameterized ) {
+      newProj = new Query.Parameter(newProj, paramOpts[varName]);
+    }
+    query.variables[varName] = newProj;
+    query.projections.push(newProj);
+  }
+  // process where clause
+  var processUnit = function(unit) {
+    if ( unit.token == "uri" ) {
+      return new Query.Resource(getUri(unit), false);
+    } else if ( unit.token == "var" ) {
+      if ( unit.value in query.variables ) {
+        return query.variables[unit.value];
+      } else {
+        // TODO: process variable not in projection
+        var newVar = new Query.Variable(query.uri + unit.value, unit.value);
+        query.variables[newVar.varName] = newVar;
+        return newVar;
+      }
+    } else {
+      throw "Blank nodes not supported.";
+    }
+  };
+  var processPattern = function(q, u) {
+    for ( var i = 0; i < u.patterns.length; i++ ) {
+      var pattern = u.patterns[i];
+      if ( pattern.token == "basicgraphpattern" ) {
+        for ( var j = 0; j < pattern.triplesContext.length; j++ ) {
+          var s = processUnit(pattern.triplesContext[j].subject),
+            p = processUnit(pattern.triplesContext[j].predicate),
+            o = processUnit(pattern.triplesContext[j].object);
+          q.where.push(new Query.BasicGraphPattern(s, p, o));
+        }
+      } else if ( pattern.token == "servicegraphpattern" ) {
+        var endpoint = new Endpoint(getUri(pattern.service));
+        var queryFake = {};
+        queryFake.endpoints = [endpoint];
+        queryFake.activeEndpoint = endpoint;
+        queryFake.where = [];
+        var queryBlock = new Query.ServiceBlock(queryFake);
+        processPattern(queryBlock, pattern.pattern);
+        q.where.push(queryBlock);
+      } else {
+        throw "Unknown token to process: " + pattern.token;
+      }
+    }
+    for ( var i = 0; i < u.filters.length; i++ ) {
+      // TODO: process filters
+    }
+  };
+  processPattern(query, info.pattern);
+  return query;
+};
+
 })();
 
 /**
@@ -614,6 +881,73 @@ Query.Variable.prototype.equals = function(other) {
     return true;
   }
   return this.uri === other.uri && this.varName === other.varName;
+};
+
+/**
+ * @class
+ * @classdesc
+ * Constructs a new SPARQL query parameter from a given {@link Query.Variable}
+ * @param {Query.Variable} variable
+ * @param {Query.Parameter.Options}
+ */
+Query.Parameter = function(variable, opts) {
+  $.extend( this, opts );
+  $.extend( this, variable );
+  this.toString = Query.Parameter.prototype.toString;
+};
+
+Query.Parameter.prototype = new Query.Variable();
+
+Query.Parameter.prototype.clone = function() {
+  var copy = new Query.Parameter( this, this );
+  copy.boundValue = this.boundValue;
+};
+
+Query.Parameter.prototype.equals = function() {
+  if ( other === null ) {
+    return false;
+  } else if ( !( other instanceof Query.Parameter ) ) {
+    return false;
+  } else if ( other === this ) {
+    return true;
+  }
+  return this.uri === other.uri && this.varName === other.varName;
+};
+
+Query.Parameter.prototype.toString = function() {
+  if ( this.required == true ) {
+    return "%" + this.varName;
+  }
+  return "$" + this.varName;
+};
+
+Query.Parameter.prototype.asVariable = Query.Variable.prototype.clone;
+
+Query.Parameter.prototype.getJSONLD = function() {
+  var desc = { "@context": ParameterContext };
+  desc["name"] = this.varName;
+  desc["doc"] = this.documentation;
+  desc["type"] = this.type;
+  if ( this.defaultValue ) {
+    desc["default"] = this.defaultValue;
+  }
+  if ( this.required ) {
+    desc["required"] = this.required;
+  }
+  return desc;
+};
+
+/**
+ * @class
+ * @classdesc
+ * Options for creating a new {@link Query.Parameter} from an existing
+ * {@link Query.Variable}.
+ */
+Query.Parameter.Options = function() {
+  this.required = false;
+  this.type = null;
+  this.documentation = "";
+  this.defaultValue = null;
 };
 
 /**
@@ -767,6 +1101,18 @@ Query.BasicGraphPattern = function(subj, pred, obj) {
   this.object = obj;
 };
 
+Query.BasicGraphPattern.prototype.parameterize = function(newVar) {
+  if ( this.subject.varName == newVar.varName ) {
+    this.subject = newVar;
+  }
+  if ( this.predicate.varName == newVar.varName ) {
+    this.predicate = newVar;
+  }
+  if ( "varName" in this.object && this.object.varName == newVar.varName ) {
+    this.object = newVar;
+  }
+};
+
 Query.BasicGraphPattern.prototype.toString = function(previous) {
   if(previous instanceof Query.BasicGraphPattern) {
     if(previous.subject.equals( this.subject )) {
@@ -893,8 +1239,18 @@ Query.ServiceBlock = function( query, map ) {
   }
 };
 
+Query.ServiceBlock.prototype.parameterize = function(newVar) {
+  // update variable
+  if ( this.variables.hasOwnProperty( newVar.varName ) ) {
+    this.variables[newVar.varName] = newVar;
+    for ( var i = 0; i < this.where.length; i++ ) {
+      this.where[i].parameterize(newVar);
+    }
+  }
+};
+
 Query.ServiceBlock.prototype.toString = function( namespaces ) {
-  var result = "\nSERVICE <" + this.activeEndpoint + "> {\n";
+  var result = "\nSERVICE <" + this.activeEndpoint.toString() + "> {\n";
   for ( var i = 0; i < this.where.length; i++ ) {
     result += this.where[i].toString( i > 0 ? this.where[i-1] : undefined );
   }
@@ -1012,7 +1368,7 @@ Query.JoinedQuery = function(query1, query2, type) {
   this.activeEndpoint = e1.uri;
 };
 
-Query.JoinedQuery.prototype = new Query();
+Query.JoinedQuery.prototype = Object.create(Query);
 
 /**
  * @class
@@ -1020,9 +1376,13 @@ Query.JoinedQuery.prototype = new Query();
  * @constructor
  * @param {string} uri URI of the SPARQL endpoint
  */
-function Endpoint(uri) {
+function Endpoint(uri, label) {
   this.uri = uri;
-  this.label = "";
+  if ( label !== undefined ) {
+    this.label = label;
+  } else {
+    this.label = "";
+  }
   this.comment = "";
   this.proxy = false;
 };
@@ -1045,6 +1405,10 @@ Endpoint.prototype.equals = function(other) {
   if ( this.uri === other.uri ) {
     return true;
   }
+};
+
+Endpoint.prototype.toString = function() {
+  return this.uri;
 };
 
 Endpoint.prototype.query = function(query) {

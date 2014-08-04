@@ -48,8 +48,18 @@
     predicate: ns+"predicate",
     resultVariables: ns+"resultVariables",
     subject: ns+"subject",
+    text: ns+"text",
     varName: ns+"varName",
     where: ns+"where"
+  };
+})();
+
+(function() {
+  var ns = "http://www.evanpatton.com/ns/spinex#";
+  window.SPEX = {
+    NS: ns,
+    Parameter: ns+"Parameter",
+    parameter: ns+"parameter"
   };
 })();
 
