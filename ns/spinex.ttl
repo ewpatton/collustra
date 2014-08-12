@@ -1,0 +1,310 @@
+@prefix sp: <http://spinrdf.org/sp#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
+@prefix foaf: <http://xmlns.com/foaf/0.1/> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+@prefix dc: <http://purl.org/dc/terms/> .
+@prefix voaf: <http://purl.org/vocommons/voaf#> .
+@prefix vann: <http://purl.org/vocab/vann/> .
+@prefix : <http://www.evanpatton.com/ns/spinex#> .
+
+: a owl:Ontology, voaf:Vocabulary ;
+  rdfs:label "SPARQL Inference Notation Extensions for Collustra"@en ;
+  rdfs:comment """<div lang="en">
+<p>This document provides extensions to the SPARQL Inference Notation to
+enable describing parameterized SPARQL queries supported by the Punya
+framework and streaming queries as defined by C-SPARQL.</p>
+</div>"""^^rdf:HTML ;
+  owl:imports <http://spinrdf.org/sp#> ;
+  vann:preferredNamespacePrefix "spex" ;
+.
+
+:Parameter a owl:Class ;
+  rdfs:subClassOf sp:Variable ;
+  rdfs:label "Parameter"@en ;
+  rdfs:comment """<div lang="en">
+<p>Parameter specializes the sp:Variable class with additional properties used
+to drive developer interaction with queries in development environments such as
+the MIT-QCRI Punya Framework. The additional properties are as follows:</p>
+<ul>
+<li>required - A xsd:boolean identifying whether the parameter is required or
+not for the query to execute successfully. When a query description is loaded,
+the system <em class="rfc2119" title="MUST">MUST</em> treat the world as closed
+and <em class="rfc2119" title="MUST">MUST</em> assume that any missing values
+of spex:required default to "false"^^xsd:boolean.</li>
+<li>datatype - Identifies the type of values the parameter takes on. This
+property can take either rdfs:Resource or any of the concrete subtypes of
+rdfs:Datatype, such as those in the XSD namespace. When a query description is
+loaded, the system <em class="rfc2119" title="MUST">MUST</em> treat the world
+as closed and <em class="rfc2119" title="MAY">MAY</em> throw an error if no
+datatype (nor a default) is specified for the query and the lack of information
+would prevent proper execution of the query.</li>
+<li>default - Provides a default value for a parameter. If a parameter is not
+assigned a value by the client, then the default value will be used. If no
+default is set, the client does not assign a value, and the property is
+required, then the system <em class="rfc2119" title="MUST">MUST</em> throw an
+error.</li>
+<li>rdfs:comment - Provides documentation that will be displayed to the query
+consumer, usually a developer, describing the purposes of the parameter as
+well as any additional constraints, e.g. units for a measurement value.</li>
+</ul>
+</div>"""^^rdf:HTML ;
+.
+
+:required a owl:DatatypeProperty, owl:FunctionalProperty ;
+  rdfs:range xsd:boolean ;
+  rdfs:label "required"@en ;
+  rdfs:comment """<div lang="en">
+<p>The <code>spex:required</code> property identifies whether or not a
+parameter is required or not when a query is evaluated. If the variable is
+required and neither the client nor <code>spex:default</code> specify a value,
+then the system <em class="rfc2119" title="MUST">MUST</em> raise an error. If
+<code>spex:required</code> is omitted then the system
+<em class="rfc2119" title="MUST">MUST</em> behave as though
+<code>spex:required</code> were specified as <code>"false"^^xsd:boolean</code>
+</p></div>"""^^rdf:HTML ;
+.
+
+:datatype a owl:ObjectProperty ;
+  rdfs:label "datatype"@en ;
+  rdfs:comment """<div lang="en">
+<p>The <code>spex:datatype</code> property specifies the type of objects that can
+be passed for the designated parameter.</p>
+</div>"""^^rdf:HTML ;
+.
+
+# we need to go outside OWL DL to support default values
+:default a rdf:Property ;
+  rdfs:label "default"@en ;
+  rdfs:comment """<div lang="en">
+<p>The <code>spex:default</code> property supplies a default value for a
+parameter that <em class="rfc2119" title="MUST">MUST</em> be used by a client
+if no value is provided by the user.</p>
+</div>"""^^rdf:HTML ;
+.
+
+:parameter a owl:ObjectProperty ;
+  rdfs:label "parameter"@en ;
+  rdfs:range :Parameter ;
+  rdfs:comment """<div lang="en">
+<p>Convenience property to associate a parameter to a query for JSON-LD
+representation. A parameter is only ever valid if referenced within the context
+of the query body. A system <em class="rfc2119" title="MUST NOT">MUST NOT</em>
+generate a relationship between a query and a parameter if that parameter is
+not used in the query definition.</p>
+</div>"""^^rdf:HTML ;
+.
+
+# C-SPARQL extensions
+:LogicalWindow a owl:Class ;
+  rdfs:subClassOf :Window ;
+  rdfs:label "Logical Window"@en ;
+  rdfs:comment """<div lang="en">
+<p>The <code>spex:LogicalWindow</code> class describes a C-SPARQL LogicalWindow.
+LogicalWindows have a <code>spex:size</code> and a <code>spex:unit</code> and
+are either <code>spex:TumblingWindow</code> or have a <code>spex:step</code> to
+specify a custom size.</p>
+</div>"""^^rdf:HTML ;
+  rdfs:seeAlso :TumblingWindow, :PhysicalWindow ;
+.
+
+:PhysicalWindow a owl:Class ;
+  rdfs:subClassOf :Window ;
+  rdfs:label "Physical Window"@en ;
+  rdfs:comment """<div lang="en">
+<p>The <code>spex:PhysicalWindow</code> class describes a C-SPARQL
+PhysicalWindow. PhysicalWindows have a <code>spex:triples</code> property to
+declare the window size. Once the window is full, new triples received from
+the stream will cause older triples to fall out of the window.</p>
+</div>"""^^rdf:HTML ;
+.
+
+:StreamReference a owl:Class ;
+  rdfs:label "Stream Reference"@en ;
+  rdfs:comment """<div lang="en">
+<p>The <code>spex:StreamReference</code> class describes a stream reference. A
+stream reference is composed of a <code>spex:streamIRI</code> and a
+<code>spex:range</code> indicating the stream and a <code>spex:Window</code> to
+apply when reasoning about the contents of the stream.</p>
+</div>"""^^rdf:HTML ;
+.
+
+:StreamingQuery a owl:Class ;
+  rdfs:subClassOf sp:Query ;
+  rdfs:label "Streaming Query"@en ;
+  rdfs:comment """<div lang="en">
+<p>The <code>spex:StreamingQuery</code> class designates a <code>sp:Query</code>
+as a C-SPARQL streaming query. A SPEX description of a C-SPARQL query may be
+described in the following way:</p><br />
+<code><pre>
+[] a spex:RegisterQuery ;
+  spex:name "ExampleQuery" ;
+  spex:query
+    [ a sp:Select ;
+      sp:resultVariables (
+        [ a sp:Count ; sp:expression [ sp:varName "login" ] ; sp:as "logins" ]
+      ) ;
+      sp:fromStream [
+        spex:streamIRI <www.example.com/auth> ;
+        spex:range [ spex:size 30 ; spex:unit spex:min ;
+                     spex:step [ spex:size 1 ; spex:unit spex:min ] ]
+      ] ;
+      sp:where (
+        [ sp:subject [ sp:varName "login" ] ;
+          sp:predicate rdf:type ;
+          sp:object ex:User ]
+        [ sp:subject [ sp:varName "login" ] ;
+          sp:predicate ex:loggedIn ;
+          sp:object true ]
+      ) ;
+    ] ;
+.
+</pre></code>
+</div>"""^^rdf:HTML ;
+.
+
+:TimeUnit a owl:Class ;
+  rdfs:label ""@en ;
+  rdfs:comment """<div lang="en">
+<p>The <code>spex:TimeUnit</code> declares the acceptable time units used for
+defining C-SPARQL logical windows.</p>
+</div>"""^^rdf:HTML ;
+  owl:oneOf ( :msec :sec :min :hour :day ) ;
+.
+
+:TumblingWindow a owl:Class ;
+  rdfs:subClassOf :LogicalWindow ;
+  rdfs:label ""@en ;
+  rdfs:comment """<div lang="en">
+<p>The <code>spex:TumblingWindow</code> class designates a
+<code>spex:LogicalWindow</code> as a tumbling window, i.e. a window whose size
+and step are equal.</p>
+</div>"""^^rdf:HTML ;
+.
+
+:Window a owl:Class ;
+  rdfs:label "Window"@en ;
+  rdfs:comment """<div lang="en">
+<p>The <code>spex:Window</code> is an upper class for all C-SPARQL windows.
+See <code>spex:LogicalWindow</code> or <code>spex:PhysicalWindow</code> for
+details about specific types of windows as supported by C-SPARQL.</p>
+</div>"""^^rdf:HTML ;
+  owl:disjointUnion ( :LogicalWindow :PhysicalWindow ) ;
+.
+
+:WindowOverlap a owl:Class ;
+  rdfs:label "Window Overlap"@en ;
+  rdfs:comment """<div lang="en">
+<p>The <code>spex:WindowOverlap</code> class declares the size and unit of a
+window using the <code>spex:size</code> and <code>spex:unit</code> properties,
+respectively.</p>
+</div>"""^^rdf:HTML ;
+.
+
+:fromStream a owl:ObjectProperty ;
+  rdfs:label "from stream"@en ;
+  rdfs:domain :StreamingQuery ;
+  rdfs:range :StreamReference ;
+  rdfs:comment """<div lang="en">
+<p>The <code>spex:fromStream</code> property declares a FROM STREAM relationship
+between a <code>spex:StreamingQuery</code> and a
+<code>spex:StreamReference</code>. Streams identified in this way are merged
+together to form the default RDF graph in the query. For more details about the
+semantics of FROM / FROM NAMED see
+<a href="http://www.w3.org/TR/sparql11-query/#specifyingDataset">
+Section 13.2 of the SPARQL 1.1 Query Language</a>.</p>
+</div>"""^^rdf:HTML ;
+.
+
+:fromNamedStream a owl:ObjectProperty ;
+  rdfs:label "from named stream"@en ;
+  rdfs:domain :StreamingQuery ;
+  rdfs:range :StreamReference ;
+  rdfs:comment """<div lang="en">
+<p>The <code>spex:fromNamedStream</code> property declares a FROM NAMED STREAM
+relationship between a <code>spex:StreamingQuery</code> and a
+<code>spex:StreamReference</code>. The contents of this RDF stream are accessed
+through the use of the GRAPH keyword.</p>
+</div>"""^^rdf:HTML ;
+.
+
+:name a owl:DatatypeProperty ;
+  rdfs:range xsd:string ;
+  rdfs:label "name"@en ;
+  rdfs:comment """<div lang="en">
+<p>The <code>spex:name</code> is used to name a <code>spex:StreamingQuery</code>
+when registering the query with an endpoint using the
+<code>spex:RegisterQuery</code> command.</p>
+</div>"""^^rdf:HTML ;
+.
+
+:query a owl:ObjectProperty ;
+  rdfs:label "query"@en ;
+  rdfs:range :StreamingQuery ;
+  rdfs:comment """<div lang="en">
+<p>The <code>spex:query</code> specifies the <code>spex:StreamingQuery</code>
+associated with a <code>spex:RegisterQuery</code> operation.</p>
+</div>"""^^rdf:HTML ;
+.
+
+:range a owl:ObjectProperty ;
+  rdfs:label "range"@en ;
+  rdfs:range :Window ;
+  rdfs:comment """<div lang="en">
+<p>The <code>spex:range</code> property specifies the span of a query, either
+a <code>spex:LogicalWindow</code> or a <code>spex:PhysicalWindow.</p>
+</div>"""^^rdf:HTML ;
+.
+
+:size a owl:ObjectProperty ;
+  rdfs:label "number" ;
+  rdfs:comment """<div lang="en">
+<p>The <code>spex:number</code> property in combination with the
+<code>spex:unit</code> can be used to define the size of a
+<code>spex:LogicalWindow</code> or its <code>spex:WindowOverlap</code>.</p>
+</div>"""^^rdf:HTML ;
+.
+
+:step a owl:ObjectProperty, owl:FunctionalProperty ;
+  rdfs:label "step" ;
+  rdfs:range :WindowOverlap ;
+  rdfs:comment """<div lang="en">
+<p><code>spex:step</code> specifies the step of a logical window.</p>
+</div>"""^^rdf:HTML ;
+  rdfs:seeAlso :TumblingWindow ;
+.
+
+:streamIRI a owl:ObjectProperty ;
+  rdfs:label "stream IRI"@en ;
+  rdfs:comment """<div lang="en">
+<p><code>spex:streamIRI</code> is used to specify a Stream's IRI in a FROM
+[NAMED] STREAM statement.</p>
+</div>"""^^rdf:HTML ;
+.
+
+:triples a owl:DatatypeProperty, owl:FunctionalProperty ;
+  rdfs:label "triples"@en ;
+  rdfs:range xsd:positiveInteger ;
+  rdfs:comment """<div lang="en">
+<p><code>spex:triples</code> is used to specify the size of a physical window.
+When the window reaches N triples, the oldest triple will fall out of the
+window when a new triple is received.</p>
+</div>"""^^rdf:HTML ;
+.
+
+:unit a owl:ObjectProperty, owl:FunctionalProperty ;
+  rdfs:label "unit" ;
+  rdfs:range :TimeUnit ;
+  rdfs:comment """<div lang="en">
+<p><code>spex:unit</code> specifies the time unit for a logical window or its
+range. Valid values are:</p>
+<ul>
+<li><code>spex:msec</code> - milliseconds</li>
+<li><code>spex:sec</code> - seconds</li>
+<li><code>spex:min</code> - minutes</li>
+<li><code>spex:hour</code> - hours</li>
+<li><code>spex:day</code> - days</li>
+</ul>
+</div>"""^^rdf:HTML ;
+.

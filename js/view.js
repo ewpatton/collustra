@@ -144,6 +144,34 @@ var View = {
           View.ConceptList.refresh();
           View.QueryList.refresh();
         });
+        $("#endpoints #add-endpoint").click(function(e) {
+          e.preventDefault();
+          View.Endpoints.showDialogForEndpoint()
+            .then(View.Endpoints.refresh);
+        });
+        $("#endpoints #edit-endpoint").click(function(e) {
+          e.preventDefault();
+          var active = $("#endpoints select").val();
+          if ( active === "" || active === "No Endpoint" ) {
+            // no endpoints; we shouldn't get here but just in case
+            return;
+          }
+          var endpoint = App.Endpoints.getEndpoint( active );
+          if ( endpoint != null ) {
+            View.Endpoints.showDialogForEndpoint( endpoint )
+              .then(View.Endpoints.refresh);
+          }
+        });
+        $("#endpoints #remove-endpoint").click(function(e) {
+          e.preventDefault();
+          var active = $("#endpoints select").val();
+          if ( active === "" || active === "No Endpoint" ) {
+            // no endpoints; we shouldn't get here but just in case
+            return;
+          }
+          App.Endpoints.removeEndpoint( active );
+          View.Endpoints.refresh();
+        });
       },
       /**
        * Shows the endpoint dialog for a given URI and an optional deferred
@@ -183,6 +211,7 @@ var View = {
           uri = null;
         }
         deferred = deferred || $.Deferred();
+        $("#endpoints").trigger("rendered");
         return deferred.promise();
       }
     };
@@ -279,6 +308,7 @@ var View = {
             li.draggable(dragOpts);
           }
         }
+        $("#query-list").trigger("rendered");
       }
     };
     // end QueryList
@@ -370,6 +400,7 @@ var View = {
             li.draggable(dragOpts);
           }
         });
+        $("#concepts").trigger("rendered");
       }
     };
   })(),
@@ -382,6 +413,8 @@ var View = {
    * @memberof View
    */
   Canvas: (function() {
+    var isDropping = false;
+
     /**
      * Provides CSS animation when the user crosses the boundary between the
      * query list and the canvas.
@@ -406,6 +439,48 @@ var View = {
       ui.helper.removeClass("drag-query", 200);
     }
 
+    var settingsAction = function(e) {
+      var queryId = $(e.target).parents("div.gear-menu").parent()
+        .find(".vars").attr("queryid");
+      View.QueryDetails.show( queryId, "General" );
+    }
+
+    var parameterizeAction = function(e) {
+      var queryId = $(e.target).parents("div.gear-menu").parent()
+        .find(".vars").attr("queryid");
+      View.QueryDetails.show( queryId, "Parameters" );
+    }
+
+    var streamAction = function(e) {
+      var queryId = $(e.target).parents("div.gear-menu").parent()
+        .find(".vars").attr("queryId");
+      View.QueryDetails.show( queryId, "Streaming" );
+    }
+
+    var collapseAction = function(e) {}
+    var deleteAction = function(e) {}
+
+    var addMenu = function(div) {
+      var menu = $("<div>");
+      // fix for dirty buffer issue in WebKit
+      menu.appendTo(div).addClass("gear-menu").mouseout(function() {
+        $("#canvas").hide().show(0);
+      });
+      var gear = $("<div>");
+      gear.appendTo(menu).addClass("gear");
+      $("<img>").attr("src", "images/gear.svg").attr("alt", "Query Settings")
+        .attr("width","16pt").click(settingsAction).appendTo(gear);
+      gear = $("<div>");
+      gear.addClass("menu").appendTo(menu);
+      var ul = $("<ul>");
+      ul.appendTo(gear);
+      $("<li>").text("Parameterize Query...").click(parameterizeAction)
+        .appendTo(ul);
+      $("<li>").text("Streaming...").click(streamAction).appendTo(ul);
+      $("<li>").text("Collapse Query").click(collapseAction).appendTo(ul);
+      $("<li>").text("Delete Query").click(deleteAction).appendTo(ul);
+    }
+
     /**
      * Helper function handles when a user drops a query object from the query
      * list.
@@ -415,10 +490,12 @@ var View = {
      * @private
      */
     var drop = function(event, ui) {
+      isDropping = true;
       var self = $(this);
       var query = ui.helper.clone().appendTo(self)
-        .draggable({"containment":"parent"}).addClass("query")
+        .draggable({"containment":"parent", "handle":"span"}).addClass("query")
         .removeClass("drag-query ui-draggable-dragging");
+      addMenu(query);
       query.position(ui.position);
       query.disableSelection();
       var div = $("<div>");
@@ -437,9 +514,23 @@ var View = {
                             "content":value["comment"]});
               span.click(View.Canvas.showLinkages);
             });
-      var queryId = App.QueryCanvas.instantiate(uri, $("#endpoints select").val());
+      var queryId = App.QueryCanvas.instantiate(uri,
+                                                $("#endpoints select").val());
       div.attr("queryId", queryId);
       $(window).trigger("dropped_query", [queryId]);
+      isDropping = false;
+    };
+
+    var makeQueryPane = function( queryId ) {
+      var query = App.QueryCanvas.getQuery( queryId );
+      var div = $( "<div>" ).addClass( "query" ).css( "left", 100 )
+        .css( "top", 100 ).css( "position", "absolute" ).disableSelection()
+        .draggable({"containment":"parent", "handle":"span"});
+      $( "<span>" ).text( query.label ).appendTo( div );
+      addMenu(div);
+      $( "<div>" ).addClass( "vars" ).attr( "queryid", queryId )
+        .appendTo( div );
+      return div;
     };
 
     return {
@@ -453,6 +544,43 @@ var View = {
            hoverClass: "drop-now", drop: drop,
            over: animateDragOver, out: animateDragOut
           });
+        $("#query-input-dialog").dialog({
+          "autoOpen": false,
+          "width": 780,
+          "buttons": [
+            {text:"Cancel",
+             click:function(){
+               $("#query-input-dialog").dialog("close");
+             }},
+            {text:"OK",
+             click:function() {
+               $("#query-input-dialog").dialog("close");
+               App.QueryCanvas.parseQuery($("#query-input-dialog textarea").val());
+             }}
+          ]
+        });
+        $("#query-input-dialog textarea").bind('paste', function(e) {
+          window.setTimeout(function() {
+            var alltext = $("#query-input-dialog textarea").val();
+            var stopIndex = alltext.indexOf("PREFIX");
+            var commenttext = alltext.substr(0, stopIndex);
+            var comment = /^(#[^#]+)/;
+            var endComment = /^(#[^P]+)PREFIX/;
+            var matched = null;
+            var formatted = "";
+            while ( matched = commenttext.match( comment ) ) {
+              formatted += matched[1] + "\n";
+              commenttext = commenttext.substr(matched[1].length);
+            }
+            formatted += commenttext + "\n";
+            formatted += alltext.substr(stopIndex);
+            $("#query-input-dialog textarea").val(formatted);
+          }, 100);
+        });
+        $("#canvas .add-button").click(function() {
+          $("#query-input-dialog textarea").text("");
+          $("#query-input-dialog").dialog("open");
+        });
         $(window).bind("projection_added", function(e, queryId, variable) {
           var div = $("div[queryId='"+queryId+"']");
           var proj = $("<div>");
@@ -468,6 +596,22 @@ var View = {
         $(window).bind("projection_removed", function(e, queryId, variable) {
           $("div[queryId='"+queryId+"'] div[varName='"+variable.varName+"']")
             .remove();
+        });
+        $(window).bind("instantiated_query", function(e, queryId) {
+          if ( isDropping ) return;
+          var query = App.QueryCanvas.getQuery( queryId );
+          var div = makeQueryPane( queryId );
+          div.appendTo( "#canvas" );
+          div = div.find(".vars");
+          $.map(query.projections,
+                function(value) {
+                  $("<div>").attr("varName", value["varName"])
+                    .text(value["varName"])
+                    .tooltip({"show":{delay:"1000"},"items":"*",
+                              "content":value["comment"]})
+                    .click(View.Canvas.showLinkages)
+                    .appendTo(div);
+                });
         });
         $(window).bind("updated_query", function(e, oldId, newId) {
           var div = $("div[queryId='"+oldId+"']");
@@ -893,6 +1037,7 @@ var View = {
         .removeClass("external-drop-target")
         .removeClass("internal-drop-target");
     };
+
     return {
       /**
        * Initializes the QueryList view, sets up the left-hand tabs for selecting
@@ -921,7 +1066,7 @@ var View = {
             View.QueryResults.addQueryResults( newId );
             var queryInfo = App.QueryCanvas.getQuery(newId);
             var p = $("pre[queryId='"+oldId+"']");
-            p.text("# " + queryInfo.label + "\r\n" + queryInfo.toString());
+            p.text(queryInfo.toString());
             p.attr("queryId", newId);
           } else {
             // TODO some update mechanism here...
@@ -930,14 +1075,16 @@ var View = {
             View.QueryResults.addQueryResults( oldId );
             var queryInfo = App.QueryCanvas.getQuery(oldId);
             $("pre[queryId='"+oldId+"']")
-              .text("# " + queryInfo.label + "\r\n" + queryInfo.toString());
+              .text(queryInfo.toString());
           }
         });
         $(window).bind("instantiated_query", function(e, queryId) {
-          var div = $("#results-raw-sparql")
           var queryInfo = App.QueryCanvas.getQuery(queryId);
+          if ( $( "#canvas " ) ) {
+          }
+          var div = $("#results-raw-sparql")
           var p = $("<pre>");
-          p.text("# " + queryInfo.label + "\r\n" + queryInfo.toString());
+          p.text(queryInfo.toString());
           p.attr("queryId", queryId);
           div.append(p);
         });
@@ -999,7 +1146,10 @@ var View = {
       removeQueryResults: function(queryId) {
         var table = $("div.tables table[queryId='"+queryId+"']");
         table.parent().css("display", "none");
-        window.setTimeout(function() { table.parent().remove(); }, 100);
+        window.setTimeout(function() {
+          table.parent().remove();
+          $("#query-results").trigger("rendered");
+        }, 100);
       },
       doBindVariable: function(event, data) {
         console.log(arguments);
@@ -1061,6 +1211,165 @@ var View = {
       },
       cancelBindVariable: function() {
         $( "#bind-variable-dialog" ).dialog( "close" );
+      }
+    };
+  })(),
+  /**
+   *
+   */
+  QueryDetails: (function() {
+    var textBlurCallback = function(queryId, varName, param) {
+      return function(e) {
+        var opts = {}, val = $(e.target).val();
+        opts[param] = val == '' ? null : val;
+        App.QueryCanvas.parameterize( queryId, varName, opts);
+        return true;
+      };
+    };
+    var selectChangeCallback = function(queryId, varName, param) {
+      return function(e) {
+        var opts = {}, val = $(e.target).val();
+        opts[param] = val == 'unspecified' ? null : val;
+        App.QueryCanvas.parameterize( queryId, varName, opts);
+        return true;
+      };
+    };
+    var entryForParameter = function(queryId, varName) {
+      var entry = App.QueryCanvas.getQuery(queryId).getVariable(varName);
+      var param = $("<div>").addClass("parameter");
+      var check = $("<input>").attr("type","checkbox");
+      if ( entry instanceof Query.Parameter ) {
+        check[0].checked = true;
+        param.addClass("open");
+      }
+      check.click(function(e) {
+        param.toggleClass("open");
+        e.stopPropagation();
+        if ( param.hasClass("open") ) {
+          var params = new Query.Parameter.Options();
+          params.type = "xsd:string";
+          params.defaultValue = "";
+          App.QueryCanvas.parameterize( queryId, varName, params );
+        } else {
+          App.QueryCanvas.unparameterize( queryId, varName );
+        }
+        return true;
+      });
+      var head = $("<div>").addClass("header").append(check)
+        .click(function() { check.click(); return false; })
+        .appendTo(param);
+      var title = $("<span>").addClass("title").text(varName)
+        .click(function() { check.click(); return false; })
+        .disableSelection().appendTo(head);
+      var opts = $("<div>").addClass("options").appendTo(param);
+      $("<span>Type:</span>").appendTo(opts);
+      var defValue = null;
+      if ( entry.type != undefined && entry.type == 'xsd:boolean' ) {
+        defValue = $("<select>");
+        defValue.append("<option value='unspecified'>unspecified</option>")
+          .append("<option value='true'>true</option>")
+          .append("<option value='false'>false</option>")
+          .change(selectChangeCallback(queryId, varName, "defaultValue"));
+        defValue.val(entry.defValue != null ? entry.defValue : 'unspecified');
+      } else {
+        defValue = $("<input>");
+      }
+      var types = $("<select>").appendTo(opts)
+        .append("<option value='xsd:string'>Text</option>")
+        .append("<option value='xsd:decimal'>Decimal</option>")
+        .append("<option value='xsd:integer'>Integer</option>")
+        .append("<option value='xsd:boolean'>Boolean</option>")
+        .append("<option value='uri'>URI</option>")
+        .change(function() {
+          var val = types.find("option:selected").val();
+          if ( val == "xsd:boolean" ) {
+            if ( defValue[0].nodeName != "SELECT" ) {
+              var temp = $("<select>");
+              defValue.replaceWith(temp);
+              defValue = temp;
+              defValue.append("<option value='unspecified'>unspecified</option>")
+                .append("<option value='true'>true</option>")
+                .append("<option value='false'>false</option>")
+                .change(selectChangeCallback(queryId, varName, "defaultValue"));
+            }
+          } else {
+            if ( defValue[0].nodeName != "INPUT" ) {
+              var temp = $("<input>").attr("type","text");
+              defValue.replaceWith(temp);
+              defValue = temp;
+              defValue.blur(textBlurCallback(queryId, varName, "defaultValue"));
+            }
+          }
+          App.QueryCanvas.parameterize( queryId, varName, { "type": val } );
+        });
+      if ( entry.type != null ) {
+        types.val( entry.type );
+      }
+      opts.append("<span>Default:</span>");
+      if ( entry.defaultValue != null ) {
+        defValue.val( entry.defaultValue );
+      }
+      defValue.attr("type","text")
+        .blur(textBlurCallback(queryId, varName, "defaultValue"))
+        .appendTo(opts);
+      opts.append("<span>Required:</span>");
+      var required = $("<input>").attr("type","checkbox").appendTo(opts);
+      required.click(function(e) {
+        App.QueryCanvas.parameterize( queryId, varName,
+                                      { "required": e.target.checked });
+      });
+      if ( entry.required ) {
+        required[0].checked = entry.required;
+      }
+      opts.append("<br>");
+      opts.append("<span>Documentation:</span>");
+      var docs = $("<input>").attr("type","text")
+        .blur(textBlurCallback(queryId, varName, "documentation")).appendTo(opts);
+      if ( entry.documentation !== undefined ) {
+        docs.val( entry.documentation );
+      }
+      return param;
+    };
+    var updateForQuery = function( queryId ) {
+      var plist = $("#parameter-list");
+      plist.empty();
+      var query = App.QueryCanvas.getQuery( queryId );
+      $("#query-name").val(query.label)
+        .blur(function() {
+          query.label = $("#query-name").val();
+        });
+      /* TODO: breaking MVC abstraction here. Add a method to iterate over
+         variable names given a queryId */
+      for ( var varName in query.variables ) {
+        if ( query.variables.hasOwnProperty( varName ) ) {
+          plist.append( entryForParameter( queryId, varName ) );
+        }
+      }
+    };
+    return {
+      init: function() {
+        $("#detail-dialog").dialog({
+          'autoOpen': false,
+          'draggable': true,
+          'modal': true,
+          'minWidth': 700,
+          'minHeight': 300,
+          'title': 'Query Settings'
+        });
+        $("#detail-dialog .content").tabs().addClass("ui-tabs-vertical ui-helper-clearfix");
+        $("#detail-dialog .content li").removeClass("ui-corner-top");
+      },
+      show: function( queryId, tab ) {
+        var dialog = $("#detail-dialog");
+        dialog.dialog( 'open' );
+        if ( tab !== undefined ) {
+          var index = $("#detail-dialog").find(".content>ul>li:contains('"+tab+"')").focus().index();
+          dialog.find(".content").tabs("option", "active", index);
+          updateForQuery( queryId );
+        }
+      },
+      close: function() {
+        $( '#detail-dialog' ).dialog( 'close' );
       }
     };
   })(),
@@ -1129,6 +1438,7 @@ var View = {
     View.ConceptList.init();
     View.Canvas.init();
     View.QueryResults.init();
+    View.QueryDetails.init();
     $("#error-dialog").dialog(
       {"modal":true,"resizable":false,"draggable":false,
        "autoOpen": false, "title":"Error","buttons":[
@@ -1141,3 +1451,18 @@ var View = {
        ]});
   }
 };
+
+(function($) {
+  $.fn.disableSelection = function() {
+    return this.attr('unselectable','on')
+      .css({'-moz-user-select':'-moz-none',
+            '-moz-user-select':'none',
+            '-o-user-select':'none',
+            '-khtml-user-select':'none',
+            '-webkit-user-select':'none',
+            '-ms-user-select':'none',
+            'user-select':'none'
+           }).bind('selectstart',
+                   function(){ return false; });
+  };
+})(jQuery);

@@ -11,7 +11,8 @@
     <script src="lib/URI.js"></script>
     <script src="lib/md5.js"></script>
     <script src="lib/underscore-min.js"></script>
-    <script src="lib/jquery-1.8.2.min.js"></script>
+    <script src="lib/modernizr-2.8.2.js"></script>
+    <script src="lib/jquery-1.11.1.min.js"></script>
     <script src="lib/jquery-migrate-1.2.1.js"></script>
     <script src="css/jquery-ui-1.10.3/ui/jquery-ui.js"></script>
     <script src="lib/jquery.layout-1.2.0.js"></script>
@@ -24,10 +25,12 @@
     <script src="js/app.js"></script>
     <script src="js/view.js"></script>
     <script src="js/main.js"></script>
+    <script src="js/tutorial.js"></script>
   </head>
   <body ondragover="event.dataTransfer.effectAllowed='none'; event.dataTransfer.dropEffect='none'; return false;">
     <div class="ui-layout-center" id="left-pane" ondragover="event.dataTransfer.effectAllowed='none'; event.dataTransfer.dropEffect='none'; return false;">
       <div id="canvas" class="ui-layout-center">
+        <div class="add-button">+</div>
       </div>
       <div id="query-results" class="ui-layout-south">
         <div class="tabs-left">
@@ -68,7 +71,11 @@
     <div id="query-list" class="ui-layout-east">
       <div id="endpoints" class="ui-layout-north">
         <p>Endpoint: <select><option class="default">No Endpoint</option></select></p>
-        <p><a href="#">Add</a><a href="#" class="disabled">Edit</a><a href="#" class="disabled">Remove</a>
+        <p>
+          <a id="add-endpoint" href="#">Add</a>
+          <a id="add-endpoint" href="#" class="disabled">Edit</a>
+          <a href="#remove-endpoint" class="disabled">Remove</a>
+        </p>
       </div>
       <div class="ui-layout-center" ondragover="event.dataTransfer.effectAllowed='none'; event.dataTransfer.dropEffect='none'; event.stopPropagation(); return false">
         <div id="query-tabs" class="tabs-bottom">
@@ -112,6 +119,34 @@
     </div>
     <div id="error-dialog">
       <p></p>
+    </div>
+    <div id="query-input-dialog" title="Add Raw Query Text">
+      <textarea rows="20" cols="80"></textarea>
+    </div>
+    <div id="detail-dialog">
+      <div class="content">
+        <ul>
+          <li><a href="#general-settings">General</a></li>
+          <li><a href="#parameter-settings">Parameters</a></li>
+          <li><a href="#streaming-settings">Streaming</a></li>
+        </ul>
+        <div id="general-settings">
+          <span>Name: <input type="text" id="query-name" /></span>
+        </div>
+        <div id="parameter-settings">
+          <div id="parameter-list">
+          </div>
+          <div class="header new-entry">
+            + Add Variable
+          </div>
+          <div class="header new-entry">
+            + Add Filter
+          </div>
+        </div>
+        <div id="streaming-settings">
+          <span>Streaming not available.</span>
+        </div>
+      </div>
     </div>
   </body>
 </html>

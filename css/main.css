@@ -97,6 +97,7 @@ div.query {
     padding: 0;
     height: auto;
     padding-top: 3pt;
+    padding-right: 17px;
 }
 
 div.query span {
@@ -326,13 +327,13 @@ div.tables > div.ui-sortable-placeholder {
     font-size: 8pt;
 }
 
-.ui-tabs-vertical {
+#query-results .ui-tabs-vertical {
     width: 100%;
     -moz-box-sizing: border-box;
     box-sizing: border-box;
 }
 
-.ui-tabs-vertical .ui-tabs-nav {
+#query-results .ui-tabs-vertical .ui-tabs-nav {
     padding: 0;
     float: left;
     width: 32px;
@@ -341,7 +342,7 @@ div.tables > div.ui-sortable-placeholder {
     background: #888;
 }
 
-.ui-tabs-vertical .ui-tabs-nav li {
+#query-results .ui-tabs-vertical .ui-tabs-nav li {
     clear: left;
     border-bottom-width: 0px !important;
     border-right-width: 0 !important;
@@ -352,7 +353,7 @@ div.tables > div.ui-sortable-placeholder {
     padding: 4px;
 }
 
-.ui-tabs-vertical .ui-tabs-nav li a {
+#query-results .ui-tabs-vertical .ui-tabs-nav li a {
     display: block;
     width: 24px;
     height: 24px;
@@ -360,13 +361,13 @@ div.tables > div.ui-sortable-placeholder {
     margin: auto;
 }
 
-.ui-tabs-vertical .ui-tabs-nav li.ui-tabs-active {
+#query-results .ui-tabs-vertical .ui-tabs-nav li.ui-tabs-active {
     border-right-width: 0;
     margin-bottom: 0;
     padding-bottom: 4px;
 }
 
-.ui-tabs-vertical .ui-tabs-panel {
+#query-results .ui-tabs-vertical .ui-tabs-panel {
 /*    float: right;*/
 /*    width: 100%;*/
     overflow: scroll;
@@ -437,6 +438,171 @@ a[href='#results-timeline']:hover, .ui-tabs-active a[href='#results-timeline'] {
  */
 * html .ui-autocomplete {
     height: 300px;
+}
+
+.ui-dialog.no-title .ui-dialog-titlebar {
+    display: none;
+}
+
+.tutorial {
+    z-index: 1000;
+}
+
+.tutorial #tutorial-nav a, .tutorial #tutorial-nav span {
+    margin-top: 18pt;
+    display: inline-block;
+    text-decoration: none;
+    width: 33%;
+    text-align: center;
+}
+
+div.gear-menu {
+    height: 15pt;
+    width: 13pt;
+    position: absolute;
+    font-size: 14px;
+    overflow: hidden;
+    top: 6px;
+    right: 2px;
+}
+
+div.gear-menu:hover {
+    overflow: visible;
+}
+
+div.gear-menu > div.gear {
+    padding-left: 1px;
+    padding-top: 1px;
+    padding-right: 1px;
+    width: 16px;
+    height: 16px;
+}
+
+div.gear-menu:hover > div.gear {
+    background-color: #dedede;
+    border: 1px solid black;
+    border-bottom: 0;
+    padding: 0;
+    z-index: 1000;
+    position: relative;
+}
+
+div.gear-menu > div.menu {
+    height: 0;
+    overflow: hidden;
+    display: none;
+}
+
+div.gear-menu:hover > div.menu {
+    display: block;
+    right: -1px;
+    position: absolute;
+    width: 140px;
+    z-index: 100;
+    background-color: #dedede;
+    border: 1px solid black;
+    top: 16px;
+    overflow: visible;
+    height: auto;
+}
+
+div.gear-menu ul {
+    font-size: 12px;
+}
+
+div.gear-menu li {
+    padding: 3pt;
+}
+
+div.gear-menu li:hover {
+    background-color: #efefef;
+}
+
+#detail-dialog .ui-tabs-vertical {
+    width: 50em;
+    border: 0;
+}
+
+#detail-dialog .ui-tabs-vertical .ui-tabs-nav {
+    padding: .2em .1em .2em .2em;
+    float: left;
+    width: 10em;
+}
+
+#detail-dialog .ui-tabs-vertical .ui-tabs-nav li {
+    clear: left;
+    width: 100%;
+    border-bottom-width: 1px !important;
+    margin: 0 -1px .2em 0;
+    box-sizing: border-box;
+}
+
+#detail-dialog .ui-tabs-vertical .ui-tabs-nav li a {
+    display: block;
+}
+
+#detail-dialog .ui-tabs-vertical .ui-tabs-nav li.ui-tabs-active {
+    padding-bottom: 0;
+    padding-right: .1em;
+    border-right-width: 1px;
+}
+
+#detail-dialog .ui-tabs-vertical .ui-tabs-panel {
+    padding: 0;
+    float: right;
+    width: 39em;
+}
+
+#detail-dialog .header {
+    background-color: aliceblue;
+    padding: 0.3em;
+    cursor: pointer;
+}
+
+#detail-dialog .header:hover {
+    background-color: powderblue;
+}
+
+#detail-dialog #parameter-list div.parameter div.options {
+    display: none;
+}
+
+#detail-dialog #parameter-list div.open div.options {
+    display: block;
+    padding: 0.4em;
+}
+
+#detail-dialog #parameter-list div.options textarea {
+    margin-left: 1em;
+    width: 26em;
+}
+
+#detail-dialog #parameter-list div.options span {
+    margin-left: 1.5em;
+}
+
+#detail-dialog .new-entry {
+    background-color: honeydew;;
+}
+
+#detail-dialog .new-entry:hover {
+    background-color: palegreen;
+}
+
+#detail-dialog {
+    font-size: 10pt;
+}
+
+#canvas .add-button {
+    margin-left: 4pt;
+    margin-top: 2pt;
+    font-weight: bold;
+    cursor: pointer;
+    width: 1.2em;
+}
+
+#canvas .add-button:hover {
+    color: skyblue;
 }
 
 /** ----- Spinner CSS ----- **/
