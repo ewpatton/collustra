@@ -412,6 +412,8 @@ var View = {
    * @memberof View
    */
   Canvas: (function() {
+    var isDropping = false;
+
     /**
      * Provides CSS animation when the user crosses the boundary between the
      * query list and the canvas.
@@ -487,6 +489,7 @@ var View = {
      * @private
      */
     var drop = function(event, ui) {
+      isDropping = true;
       var self = $(this);
       var query = ui.helper.clone().appendTo(self)
         .draggable({"containment":"parent", "handle":"span"}).addClass("query")
@@ -514,6 +517,7 @@ var View = {
                                                 $("#endpoints select").val());
       div.attr("queryId", queryId);
       $(window).trigger("dropped_query", [queryId]);
+      isDropping = false;
     };
 
     var makeQueryPane = function( queryId ) {
@@ -554,6 +558,24 @@ var View = {
              }}
           ]
         });
+        $("#query-input-dialog textarea").bind('paste', function(e) {
+          window.setTimeout(function() {
+            var alltext = $("#query-input-dialog textarea").val();
+            var stopIndex = alltext.indexOf("PREFIX");
+            var commenttext = alltext.substr(0, stopIndex);
+            var comment = /^(#[^#]+)/;
+            var endComment = /^(#[^P]+)PREFIX/;
+            var matched = null;
+            var formatted = "";
+            while ( matched = commenttext.match( comment ) ) {
+              formatted += matched[1] + "\n";
+              commenttext = commenttext.substr(matched[1].length);
+            }
+            formatted += commenttext + "\n";
+            formatted += alltext.substr(stopIndex);
+            $("#query-input-dialog textarea").val(formatted);
+          }, 100);
+        });
         $("#canvas .add-button").click(function() {
           $("#query-input-dialog textarea").text("");
           $("#query-input-dialog").dialog("open");
@@ -575,6 +597,7 @@ var View = {
             .remove();
         });
         $(window).bind("instantiated_query", function(e, queryId) {
+          if ( isDropping ) return;
           var query = App.QueryCanvas.getQuery( queryId );
           var div = makeQueryPane( queryId );
           div.appendTo( "#canvas" );
